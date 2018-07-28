@@ -1,0 +1,47 @@
+.PHONY: all debug release clean distclean
+
+ROOTDIR := $(CURDIR)
+include $(ROOTDIR)/src-build/default-config.mk
+
+# cross-compiler
+CROSS_COMPILE := /home/striker/bin/cross-compile/lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64/staging_dir/toolchain-mips_24kc_gcc-5.4.0_musl-1.1.16/bin/mips-openwrt-linux-gcc
+override CC := $(CROSS_COMPILE)
+# whole solution flags
+CFLAGS := -Wno-unused-parameter -march=24kc -msoft-float -I$(ROOTDIR)/src-build/include -I$(ROOTDIR)/src-build/include/ncursesw
+# it is unknown for me how to link with target glibc
+LDFLAGS := -msoft-float
+
+# -r: save time by omitting `default' targets
+# -R: avoid auto-setting of CC, LD and some other variables
+# -s: silence is golden, enjoy short compilation messages
+MKFLG := rRs
+
+# export ALL variables
+export
+
+# BUILD CONFIGURATIONS
+# optimized for tp-link tl-wr1043nd v1 router with openwrt, you can set another one
+CFLAGS := -Wextra -pedantic -O3 -g -D NDEBUG=1 -D RELEASE=1 $(CFLAGS)
+override CONFIGURATION := release
+
+release: all
+
+debug: CFLAGS := -Wextra -pedantic -O0 -ggdb -ffunction-sections -D DEBUG=1 $(CFLAGS)
+debug: CFLAGS += -D VALGRIND_SUCKS
+debug: override CONFIGURATION := debug
+debug: all
+
+# TARGETS
+all:
+	$(MAKE) -$(MKFLG)C $(SRCDIR) projects
+
+clean:
+	$(MAKE) -$(MKFLG)C $(SRCDIR) clean
+
+distclean:
+	$(MAKE) -$(MKFLG)C $(SRCDIR) distclean
+
+# last resort target, to redirect all lower level targets
+# https://www.gnu.org/software/make/manual/html_node/Last-Resort.html
+%::
+	$(MAKE) -$(MKFLG)C $(SRCDIR) $@

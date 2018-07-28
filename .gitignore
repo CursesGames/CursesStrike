@@ -1,0 +1,11 @@
+bin
+lib
+obj
+*.o
+*.a
+*.so
+*.exe
+*logfile.log
+make.config.prev
+make.config.now
+core

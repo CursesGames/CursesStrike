@@ -1,0 +1,12 @@
+language: c
+script: make && make debug
+compiler:
+  - gcc
+  - clang
+git:
+  depth: 1
+  quiet: true
+before_install:
+  - wget http://launchpadlibrarian.net/240350636/coreutils_8.25-2ubuntu2_amd64.deb
+  - sudo dpkg -i ./coreutils_8.25-2ubuntu2_amd64.deb
+  - realpath --version
