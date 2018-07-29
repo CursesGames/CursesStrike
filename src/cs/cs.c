@@ -5,9 +5,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
-#include <signal.h>
 #include <ncursesw/ncurses.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "../libncurses_util/ncurses_util.h"
 #include "../liblinux_util/linux_util.h"
@@ -44,6 +44,9 @@ typedef struct {
 } FPSTHREAD;
 
 void draw_window(FPSTHREAD *prm);
+
+// WARNING: this is a workaround for dump C libraries like musl
+typedef union sigval sigval_t;
 
 void timer_detonate(sigval_t argv) {
 	FPSTHREAD *prm = (FPSTHREAD*)(argv.sival_ptr);
@@ -103,7 +106,7 @@ void draw_window(FPSTHREAD *prm) {
 
 int main(int argc, char **argv) {
 	/////////////////////////
-	//    »Õ»÷»¿À»«¿÷»ﬂ    //
+	//    –ò–ù–ò–¶–ò–ê–õ–ò–ó–ê–¶–ò–Ø    //
 	/////////////////////////
 	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_mutex_t mutex_frame = PTHREAD_MUTEX_INITIALIZER;
@@ -149,13 +152,13 @@ int main(int argc, char **argv) {
 		, .me_y = 14 + rand() % 10
 	};
 
-	// Á‡ÔÛÒÍ Ú‡ÈÏÂ‡
+	// –∑–∞–ø—É—Å–∫ —Ç–∞–π–º–µ—Ä–∞
 	struct sigevent sgv = {
 		  .sigev_notify = SIGEV_THREAD
 		, .sigev_value = { .sival_ptr = &prm }
 		, .sigev_signo = SIGALRM
 		, .sigev_notify_function = timer_detonate
-		, ._sigev_un._sigev_thread._attribute = NULL
+		, .sigev_notify_attributes = NULL
 	};
 	timer_t timer_id;
 	int timer_fd;
@@ -168,19 +171,19 @@ int main(int argc, char **argv) {
 
 	while(true) {
 		/////////////////////////
-		//      Œ“–»—Œ¬ ¿      //
+		//      –û–¢–†–ò–°–û–í–ö–ê      //
 		/////////////////////////
 		draw_window(&prm);
 
 		/////////////////////////
-		//         ¬¬Œƒ        //
+		//         –í–í–û–î        //
 		/////////////////////////
 		int64_t key = raw_wgetch(stdscr);
 		pthread_mutex_lock(&mutex);
 		switch(key) {
 
 			/////////////////////////
-			//       Œ¡–¿¡Œ“ ¿     //
+			//       –û–ë–†–ê–ë–û–¢–ö–ê     //
 			/////////////////////////
 
 			case 0x3: // Ctrl+C

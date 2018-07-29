@@ -4,8 +4,11 @@ ROOTDIR := $(CURDIR)
 include $(ROOTDIR)/src-build/default-config.mk
 
 # whole solution flags
-CFLAGS := -Wno-unused-parameter -ansi
+CFLAGS := -Wno-unused-parameter -ansi -Wextra -pedantic
 LDFLAGS :=
+
+# native compilation
+CFLAGS += -march=native -mtune=native
 
 # -r: save time by omitting `default' targets
 # -R: avoid auto-setting of CC, LD and some other variables
@@ -15,13 +18,12 @@ MKFLG := rRs
 # export ALL variables
 export
 
-CFLAGS := -Wextra -pedantic -O3 -g -march=native -mtune=native -D NDEBUG=1 -D RELEASE=1 $(CFLAGS)
-override CONFIGURATION := release
-
 # BUILD CONFIGURATIONS
+CFLAGS := -O3 -g -D NDEBUG=1 -D RELEASE=1
+override CONFIGURATION := release
 release: all
 
-debug: CFLAGS := -Wextra -pedantic -O0 -ggdb -ffunction-sections -D DEBUG=1 $(CFLAGS)
+debug: CFLAGS := -O0 -ggdb -ffunction-sections -D DEBUG=1
 debug: CFLAGS += -D VALGRIND_SUCKS
 debug: override CONFIGURATION := debug
 debug: all
