@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
 		, .sigev_value = { .sival_ptr = &prm }
 		, .sigev_signo = SIGALRM
 		, .sigev_notify_function = timer_detonate
-		, .sigev_notify_attributes = NULL
+        , .sigev_notify_attributes = NULL
 	};
 	timer_t timer_id;
 	int timer_fd;

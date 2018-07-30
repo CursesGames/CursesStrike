@@ -8,9 +8,9 @@ CROSS_COMPILE := /home/striker/bin/cross-compile/gcc-linaro-4.9-2016.02-x86_64_a
 override CC := $(CROSS_COMPILE)
 # whole solution flags
 CFLAGS := -Wno-unused-parameter -ansi -Wextra -pedantic
-CFLAGS += -mabi=aapcs-linux -mfloat-abi=hard -march=armv7 -I$(ROOTDIR)/src-build/arch/arm/include
+CFLAGS += -mabi=aapcs-linux -mfloat-abi=hard -march=armv7 -I$(ROOTDIR)/src-build/arch/arm-hf/include
 # it is unknown for me how to link with target glibc
-LDFLAGS := -L$(ROOTDIR)/src-build/arch/arm/lib -mfloat-abi=hard
+LDFLAGS := -L$(ROOTDIR)/src-build/arch/arm-hf/lib -mfloat-abi=hard
 
 # -r: save time by omitting `default' targets
 # -R: avoid auto-setting of CC, LD and some other variables

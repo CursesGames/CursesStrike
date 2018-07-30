@@ -7,7 +7,7 @@ CFLAGS_LOCAL := -std=c99
 LOCAL_HEADERS := $(wildcard *.h)
 LOCAL_SOURCES := $(wildcard *.c)
 LOCAL_DEPENDENCIES :=
-LOCAL_MODULE := libbcsmap.a
+LOCAL_MODULE := libbcsproto.a
 
 include $(BUILD_STATIC_LIBRARY)
 
