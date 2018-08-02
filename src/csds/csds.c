@@ -38,8 +38,12 @@ int udp_bind(struct sockaddr_in *addr_udp, socklen_t addr_size) {
 
     // Setting up port number and address
     addr_udp->sin_family = AF_INET;
-    addr_udp->sin_port = htons(BCSSERVER_DEFAULT_PORT);
+    addr_udp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
     addr_udp->sin_addr.s_addr = INADDR_ANY;
+
+	// Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
+	int reuse_addr = 1;
+	__syscall(setsockopt(u_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
     __syscall(bind(u_fd, (struct sockaddr *)addr_udp, addr_size));
@@ -56,7 +60,7 @@ int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
 
     // Setting up port number and address
     addr_tcp->sin_family = AF_INET;
-    addr_tcp->sin_port = htons(BCSSERVER_DEFAULT_PORT);
+    addr_tcp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
     addr_tcp->sin_addr.s_addr = INADDR_ANY;
 
     // Link address with socket descriptor
@@ -90,7 +94,7 @@ void *broadcast (void *arg) {
 
             // Setting up port number and address
             bcs[n].udp_bc_address.sin_family = AF_INET;
-            bcs[n].udp_bc_address.sin_port = htons(BCSSERVER_BCAST_PORT);
+            bcs[n].udp_bc_address.sin_port = htobe16(BCSSERVER_BCAST_PORT);
             bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr;
 
             // Configure the socket to broadcast
@@ -104,7 +108,7 @@ next_iface:
 
     BCSBEACON to_send = {
           .magic = htobe64(BCSBEACON_MAGIC)
-        , .port = BCSSERVER_DEFAULT_PORT
+        , .port = htobe16(BCSSERVER_DEFAULT_PORT)
         , .description = "Curses-Strike Server v0.1 by Sl1vo4ka"
     };
 
@@ -318,7 +322,7 @@ int main(int argc, char **argv) {
             
             // Set initial message parameters
             serv_msg.packet_no = cl_msg.packet_no;
-            serv_msg.type = BCSREPLT_MAP;
+            serv_msg.type = htobe32(BCSREPLT_MAP);
 
             // Send message-MAP to client
             __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
@@ -331,7 +335,7 @@ int main(int argc, char **argv) {
             __syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
             printf("coordinates were sent to client");
             delete_client(clients, addr_client);
-            
+
             // Str1ker, 03.08.2018: вернул на место коммит 668e0ba604247ef0e8e34f45b138b620cdd3324f
             // Receive message-CONNECT2
             __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));

@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <errno.h>
+#include <endian.h>
 #include <sys/ioctl.h>
 #include "bcsproto.h"
 #include "../liblinux_util/linux_util.h"

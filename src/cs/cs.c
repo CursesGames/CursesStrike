@@ -209,10 +209,11 @@ start_bcast_scan:
 	for(uint i = 0; i < iface_count; i++) {
 		struct sockaddr_in sin = {
 			  .sin_addr.s_addr = ((BCAST_UN*)(&(ifaces.array[i])))->v4.bcast
-			, .sin_port = htons(BCSSERVER_BCAST_PORT)
+			, .sin_port = htobe16(BCSSERVER_BCAST_PORT)
 			, .sin_family = AF_INET
 		};
 		__syscall(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+		// reuse addr to allow server & client on the same iface
 		__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
 		__syscall(bind(ubcls[i], (struct sockaddr*)&sin, sizeof(sin)));
 
@@ -318,6 +319,7 @@ next_epevent:
 	while(true) {
 		idx = 1;
 		printf("Enter 0 to rescan, or the number of server to connect [1]: ");
+		fflush(stdout);
 		fgets(buf, 256, stdin); // TODO: buffer overflow, check?
 		if(buf[0] == '\n')
 			break;
