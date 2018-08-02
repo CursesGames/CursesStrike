@@ -1,6 +1,6 @@
 # DEPENDENCIES
 cs: libncurses_util liblinux_util libbcsmap libbcsproto
-csds: liblinux_util libbcsmap
+csds: liblinux_util libbcsmap libbcsproto
 libncurses_util: liblinux_util
 liblinux_util: 
 libbcsmap: liblinux_util

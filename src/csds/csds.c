@@ -11,31 +11,22 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
+#include "../libbcsproto/bcsproto.h"
 
 #define LISTEN_NUM 16
-#define PORT_NUM 2018
 #define TIMEOUT 10
 #define CLIENTS_NUM 16
 #define UDP_MAXLEN 65535
-#define NICK_SIZE 20
 #define BC_FD_NUM 5
 
 // Data for broadcast sockets
 struct bc_data {
     int broadcast_fd;
     struct sockaddr_in udp_bc_address;
-};
-
-// Client data
-struct client_id{
-    struct sockaddr_in cl_address;
-    long int last_resp_time;
-    char nick[NICK_SIZE];
-
 };
 
 // Socket initialization and udp address binding
@@ -47,7 +38,7 @@ int udp_bind(struct sockaddr_in *addr_udp, socklen_t addr_size) {
 
     // Setting up port number and address
     addr_udp->sin_family = AF_INET;
-    addr_udp->sin_port = htons(PORT_NUM);
+    addr_udp->sin_port = htons(DEFAULT_PORT);
     addr_udp->sin_addr.s_addr = INADDR_ANY;
 
     // Link address with socket descriptor
@@ -65,7 +56,7 @@ int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
 
     // Setting up port number and address
     addr_tcp->sin_family = AF_INET;
-    addr_tcp->sin_port = htons(PORT_NUM);
+    addr_tcp->sin_port = htons(DEFAULT_PORT);
     addr_tcp->sin_addr.s_addr = INADDR_ANY;
 
     // Link address with socket descriptor
@@ -87,7 +78,7 @@ void *broadcast (void *arg) {
     struct bc_data bcs[BC_FD_NUM];
 
     __syscall(getifaddrs(&ifaddr));
-    while(ifaddr != NULL && i < BC_FD_NUM) {
+    while(ifaddr != NULL && n < BC_FD_NUM) {
         if(ifaddr->ifa_addr == NULL
             || ifaddr->ifa_addr->sa_family != AF_INET
             || !(ifaddr->ifa_flags & IFLA_BROADCAST))
@@ -95,15 +86,15 @@ void *broadcast (void *arg) {
 
         if(((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
             // Initialize socket descriptor
-            __syscall(bcs[i].broadcast_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+            __syscall(bcs[n].broadcast_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 
             // Setting up port number and address
-            bcs[i].udp_bc_address.sin_family = AF_INET;
-            bcs[i].udp_bc_address.sin_port = htons(PORT_NUM + 1);
-            bcs[i].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr;
+            bcs[n].udp_bc_address.sin_family = AF_INET;
+            bcs[n].udp_bc_address.sin_port = htons(DEFAULT_PORT + 1);
+            bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr;
 
             // Configure the socket to broadcast
-            setsockopt(bcs[i].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
+            setsockopt(bcs[n].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
             n++;
         }
 
@@ -111,10 +102,16 @@ next_iface:
         ifaddr = ifaddr->ifa_next;
     }
 
+    BCSBEACON to_send = {
+          .magic = BCSBEACON_MAGIC
+        , .port = DEFAULT_PORT
+        , .description = "Curses-Strike Test Server"
+    };
+
     while(true) {
         for(i = 0; i < n; i++){
             __syscall(sendto(bcs[i].broadcast_fd,
-            &(udp_address), addr_size, 0, 
+            &(to_send), sizeof(BCSBEACON), 0, 
             (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
             printf ("data was sent to client\n");
         }
@@ -138,14 +135,14 @@ void create_map (BCSMAP *map) {
 }
 
 // Player coordinates assignment
-void init_start_xy (BCSMAP *map, uint16_t *start_xy) {
+void init_start_xy (BCSMAP *map, uint16_t start_x, uint16_t start_y) {
     int i, j;
 
     for (i = 0; i < map->height; i++) {
         for (j = 0; j < map->width; j++) {
             if (map->map_primitives[i * map->width + j] == 0) {
-                start_xy[0] = i; //y-coordinate
-                start_xy[1] = j; //x-coordinate
+                start_y = i; //y-coordinate
+                start_x = j; //x-coordinate
                 map->map_primitives[i * map->width + j] = 1;
                 return;
             }
@@ -154,29 +151,34 @@ void init_start_xy (BCSMAP *map, uint16_t *start_xy) {
 }
 
 // Put client data into array
-void add_client (struct client_id *clients, struct sockaddr_in addr_client) {
+int add_client (BCSMAP *map, BCSCLIENT *clients, struct sockaddr_in addr_client) {
+    struct timeval tv;
     int i;
 
     for (i = 0; i < CLIENTS_NUM; i++) {
-        if ((clients[i].cl_address.sin_port == 0) && 
-            (clients[i].cl_address.sin_family == 0) && 
-            (clients[i].cl_address.sin_addr.s_addr == 0)) {
-            clients[i].cl_address = addr_client;
-            clients[i].last_resp_time = time (NULL); //set current time as the last response time
-            return;
+        if (&clients[i] == NULL) {
+            clients[i].private_info.endpoint = addr_client; //client endpoint
+            __syscall(gettimeofday(&(clients[i].private_info.time_last_dgram), NULL)); //set current time as the last response time
+            init_start_xy(map, clients[i].public_info.position.x, clients[i].public_info.position.y); //init coordinates
+            clients[i].public_info.state = BCSCLST_CONNECTING; //init state = wait for map
+            clients[i].public_info.direction = BCSDIR_UP; //init direction
+            return i;
         }
     }
+
+    return -1;
 }
 
 // Search client data in array, returns index of element 
-int search_client (struct client_id *clients, struct sockaddr_in addr_client) {
+int search_client(BCSCLIENT *clients, struct sockaddr_in addr_client) {
     int i;
     int num;
 
+    // If endpoint is the same as addr_client
     for (i = 0; i < CLIENTS_NUM; i++) {
-        if ((clients[i].cl_address.sin_addr.s_addr == addr_client.sin_addr.s_addr) && 
-            (clients[i].cl_address.sin_port == addr_client.sin_port) && 
-            (clients[i].cl_address.sin_family == addr_client.sin_family)) {
+        if ((clients[i].private_info.endpoint.sin_addr.s_addr == addr_client.sin_addr.s_addr) && 
+            (clients[i].private_info.endpoint.sin_port == addr_client.sin_port) && 
+            (clients[i].private_info.endpoint.sin_family == addr_client.sin_family)) {
             num = i;
             break;
         }
@@ -186,11 +188,35 @@ int search_client (struct client_id *clients, struct sockaddr_in addr_client) {
 }
 
 // Remove client from array
-void delete_client (struct client_id *clients, struct sockaddr_in addr_client) {
+void delete_client (BCSCLIENT *clients, struct sockaddr_in addr_client) {
     int num;
 
     num = search_client(clients, addr_client);
-    memset(clients + num*sizeof(struct client_id), 0, sizeof(struct client_id));
+    memset(clients + num*sizeof(BCSCLIENT), 0, sizeof(BCSCLIENT));
+}
+
+void log_print(BCSCLIENT *clients){
+    int i;
+
+    for(i = 0; i < CLIENTS_NUM; i++){
+        if(&clients[i] != NULL){
+            ALOGD("CLIENT %d\n", i);
+            //public info 
+            ALOGD("state: %d\n", clients[i].public_info.state); //state - print %d ?
+            ALOGD("position: x = %u, y = %u\n", (unsigned int)clients[i].public_info.position.x, (unsigned int)clients[i].public_info.position.y);
+            ALOGI("direction: %d\n", clients[i].public_info.direction); //direction %d ?
+            //public ext info
+            ALOGI("frags: %u\n", (unsigned int)(clients[i].public_ext_info.frags));
+            ALOGI("deaths: %u\n", (unsigned int)(clients[i].public_ext_info.deaths));
+            ALOGI("deaths: %s\n", clients[i].public_ext_info.nickname);
+            //private info
+            //must be sin_addr.s_addr but is sin_addr
+            ALOGI("endpoint : family = %d, port = %d, address = %s\n", clients[i].private_info.endpoint.sin_family, clients[i].private_info.endpoint.sin_port, inet_ntoa(clients[i].private_info.endpoint.sin_addr));
+            ALOGI("last fire time: %ld.%06ld\n", clients[i].private_info.time_last_fire.tv_sec, clients[i].private_info.time_last_fire.tv_usec);
+            ALOGI("last dgram time: %ld.%06ld\n", clients[i].private_info.time_last_dgram.tv_sec, clients[i].private_info.time_last_dgram.tv_usec);
+        }
+
+    }
 }
 
 int main(int argc, char **argv) {
@@ -199,13 +225,15 @@ int main(int argc, char **argv) {
     struct sockaddr_in addr_tcp, addr_udp, addr_bc_udp, addr_client;
     struct epoll_event event;
     socklen_t addr_size = sizeof (struct sockaddr_in);
-    struct client_id *clients = malloc(sizeof(struct client_id) * CLIENTS_NUM);
+    BCSCLIENT *clients = malloc(sizeof(BCSCLIENT) * CLIENTS_NUM);//clients struct
+    BCSMSG cl_msg;
+    BCSMSGREPLY serv_msg;
     void *status;
     char msg[UDP_MAXLEN];
     int epfd; //event polling instance
     int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
     int result;
-    uint16_t start_xy[2]; //initial player coordinates
+    int id;
 
     //create_map (&map);
     BCSMAP map = {
@@ -220,7 +248,7 @@ int main(int argc, char **argv) {
         , .map_primitives = calloc(80 * 24, 1)
     };
     
-    memset(clients, 0, sizeof(struct client_id) * CLIENTS_NUM); //clients array nullification
+    memset(clients, 0, sizeof(BCSCLIENT) * CLIENTS_NUM); //clients array nullification
 
     u_fd = udp_bind (&addr_udp, addr_size);
     t_fd = tcp_bind (&addr_tcp, addr_size);
@@ -274,18 +302,23 @@ int main(int argc, char **argv) {
         // Receive message from client by udp, add client data to array
         // and send him his initial coordinates
         if (event.data.fd == u_fd) { //check event
-            // Receive message from client 
-            __syscall(result = recvfrom(u_fd, msg, UDP_MAXLEN, 0, (struct sockaddr*)&addr_client, &addr_size));
+            // Receive message-CONNECT from client 
+            __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
             printf("received from client: %.*s\n", result, msg);
+            
+            // Set initial message parameters
+            serv_msg.packet_no = cl_msg.packet_no;
+            serv_msg.type = BCSREPLT_MAP;
+
+            // Send message-MAP to client
+            __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
 
             // Add client to array
-            add_client(clients, addr_client);
-
-            // Choose free map coordinates for new client
-            init_start_xy(&map_state, start_xy);
+            __syscall(id = add_client(&map, clients, addr_client));
+            //ALOGD();
 
             // Send coordinates to client
-            __syscall(sendto(u_fd, &start_xy, sizeof(int)*2, 0, (struct sockaddr *) &addr_client, addr_size));
+            __syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
             printf("coordinates were sent to client");
             delete_client(clients, addr_client);
         }

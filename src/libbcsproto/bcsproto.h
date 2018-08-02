@@ -10,6 +10,7 @@
 
 #define BCSBEACON_MAGIC 0x1324214277da7aff
 #define BCSBEACON_DESCRLEN 45
+#define DEFAULT_PORT 2018
 
 // from csds.c
 #define BCSPLAYER_NICKLEN 20
@@ -116,7 +117,7 @@ typedef struct __bcsmsg {
 
 // базовая часть сообщения сервера
 typedef struct __bcsmsg_reply {
-	int32_t packet_no;
+	int32_t packet_no; //из приходящего сообщения
 	BCS_REPLY_TYPE type;
 } BCSMSGREPLY;
 
