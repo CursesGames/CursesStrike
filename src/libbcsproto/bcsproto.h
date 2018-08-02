@@ -6,6 +6,15 @@
 #include <stdint.h>
 #include <time.h>
 #include <netinet/in.h>
+#include <stdbool.h>
+
+#define BCSBEACON_MAGIC 0x1324214277da7aff
+#define BCSBEACON_DESCRLEN 45
+
+// from csds.c
+#define BCSPLAYER_NICKLEN 20
+// deprecated
+#define NICK_SIZE BCSPLAYER_NICKLEN
 
 // TODO: export symbols to manipulate protocol datagrams
 typedef struct __point {
@@ -73,7 +82,7 @@ typedef struct __bcsclient_info_public {
 typedef struct __bcsclient_info_public_ext {
 	uint16_t frags;
 	uint16_t deaths;
-	char nickname[21]; // 20 + '\0'
+	char nickname[BCSPLAYER_NICKLEN + 1]; // 20 + '\0'
 } BCSCLIENT_PUBLIC_EXT; // aligned to 32 bytes on x64, FIXME
 
 typedef struct __bcsclient_info_private {
@@ -94,14 +103,14 @@ typedef struct __bcsmsg {
 	BCSACTION action;
 // accurate to microseconds
 	struct timeval time_gen;
-// additional params
+// additional params - 8 bytes
 	union {
 		int64_t long_p;
 		struct {
 			int32_t int_lo;
 			int32_t int_hi;
 		} ints;
-		uint8_t bytes[8];
+		uint8_t bytes[8]; // 
 	} un;
 } BCSMSG;
 
@@ -118,3 +127,16 @@ typedef struct __bcsmsg_announce {
 // 0-й элемент анонса - всегда сам игрок
 	BCSCLIENT_PUBLIC *public_info;
 } BCSMSGANNOUNCE;
+
+typedef struct __bcs_beacon {
+// константа: BCSBEACON_MAGIC
+	uint64_t magic;
+// порт сервера. IP адрес будет вычленен автоматически из broadcast-сообщения
+	uint16_t port;
+// строка с человекочитаемым названием сервера
+	char description[BCSBEACON_DESCRLEN + 1];
+} BCSBEACON;
+
+bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg);
+bool bcsproto_recv(int sockfd, struct sockaddr_in *client_endpoint_from, BCSMSG *msg);
+bool bcsproto_validate_message(BCSMSG *msg);
