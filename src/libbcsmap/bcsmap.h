@@ -9,4 +9,4 @@ typedef struct __map_t {
 	uint16_t width; // ширина карты - по горизонтали - количество столбцов
 	uint16_t height; // высота карты - по вертикали - количество строк
 	uint8_t *map_primitives;
-} BCSMAP;
+}__attribute__((packed))BCSMAP;

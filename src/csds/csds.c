@@ -2,189 +2,181 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/epoll.h>
+#include <ifaddrs.h>
+#include <linux/if_link.h>
+#include <netinet/in.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <string.h>
+#include <time.h>
 
-#define LISTEN_NUM 5
+#include "../liblinux_util/linux_util.h"
+#include "../libbcsmap/bcsmap.h"
+
+#define LISTEN_NUM 16
 #define PORT_NUM 2018
-#define ROW 24
-#define COL 80
 #define TIMEOUT 10
 #define CLIENTS_NUM 16
-#define MSG_SIZE 100
+#define UDP_MAXLEN 65535
+#define NICK_SIZE 20
+#define BC_FD_NUM 5
 
-/* Данные для передачи в функцию потока */
-struct thread_data {
+// Data for broadcast sockets
+struct bc_data {
     int broadcast_fd;
-    struct sockaddr_in udp_address;
     struct sockaddr_in udp_bc_address;
 };
 
-/* Инициализация сокета и привязка адреса udp */
-int udp_bind (struct sockaddr_in *addr_udp, socklen_t addr_size) {
+// Client data
+struct client_id{
+    struct sockaddr_in cl_address;
+    long int last_resp_time;
+    char nick[NICK_SIZE];
+
+};
+
+// Socket initialization and udp address binding
+int udp_bind(struct sockaddr_in *addr_udp, socklen_t addr_size) {
     int u_fd;
 
-    /* Инициализируем дескриптор сокета */
-    if ((u_fd = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
-        perror("error in creating socket");
-        exit(EXIT_FAILURE);
-    }
+    // Initialize socket descriptor
+    __syscall(u_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 
-    /* Задаем адрес и порт */
-    memset (addr_udp, 0, addr_size);
+    // Setting up port number and address
     addr_udp->sin_family = AF_INET;
-    addr_udp->sin_port = htons (PORT_NUM);
-    addr_udp->sin_addr.s_addr = inet_addr ("127.0.0.1");
+    addr_udp->sin_port = htons(PORT_NUM);
+    addr_udp->sin_addr.s_addr = INADDR_ANY;
 
-    /* Связываем адрес с дескриптором сокета */
-    if (bind (u_fd, (struct sockaddr *) addr_udp, addr_size) == -1) {
-        perror ("bind error in udp");
-        exit (EXIT_FAILURE);
-    }
+    // Link address with socket descriptor
+    __syscall(bind(u_fd, (struct sockaddr *)addr_udp, addr_size));
 
     return u_fd;
 }
 
-/* Инициализация сокета и привязка адреса tcp */
-int tcp_bind (struct sockaddr_in *addr_tcp, socklen_t addr_size) {
+// Socket initialization and tcp address binding
+int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
     int t_fd;
 
-    /* Инициализируем дескриптор сокета */
-    if ((t_fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-        perror("error in creating socket in tcp server");
-        exit(EXIT_FAILURE);
-    }
+    // Initialize socket descriptor
+    __syscall(t_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 
-    /* Задаем адрес прослушивания и порт */
-    memset (addr_tcp, 0, addr_size);
+    // Setting up port number and address
     addr_tcp->sin_family = AF_INET;
-    addr_tcp->sin_port = htons (PORT_NUM);
-    addr_tcp->sin_addr.s_addr = inet_addr ("127.0.0.1");
+    addr_tcp->sin_port = htons(PORT_NUM);
+    addr_tcp->sin_addr.s_addr = INADDR_ANY;
 
-    /* Связываем адрес с дескриптором сокета */
-    if (bind (t_fd, ( struct sockaddr * ) addr_tcp, addr_size) == -1) {
-        perror("bind error in tcp");
-        exit(EXIT_FAILURE);
-    }
+    // Link address with socket descriptor
+    __syscall(bind(t_fd, (struct sockaddr *)addr_tcp, addr_size));
 
-    /* Начинаем слушать сокет */
-    if (listen (t_fd, LISTEN_NUM) == -1 ) {
-        close (t_fd);
-        perror ("listen error");
-        exit (EXIT_FAILURE);
-    }
+    // Run socket listenning
+    __syscall(listen(t_fd, LISTEN_NUM));
 
     return t_fd;
 }
 
-/* Настройка широковещательного сокета */
-int bc_udp_init(struct sockaddr_in *addr_bc_udp, socklen_t addr_size){
-    int bc_fd;
-    int val = 1;
-
-    /* Инициализируем дескриптор сокета */
-    if ((bc_fd = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
-        perror("error in creating socket");
-        exit(EXIT_FAILURE);
-    }
-
-    /* Задаем адрес и порт */
-    memset (addr_bc_udp, 0, addr_size);
-    addr_bc_udp->sin_family = AF_INET;
-    addr_bc_udp->sin_port = htons (PORT_NUM);
-    addr_bc_udp->sin_addr.s_addr = inet_addr ("192.168.0.255");
-
-    /* Настройка сокета на широковещательную рассылку */
-    setsockopt(bc_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
-
-    return bc_fd;
-}
-
-/* Контроль ошибок при создании потока */
-void errorCreateThread (int result) {
-    if (result != 0) {
-        perror ("Error in creating the thread");
-        exit (EXIT_FAILURE);
-    }
-}
-
-/* Контроль ошибок при ожидании завершения потока */
-void errorJoinThread (void *status) {
-    if (status != 0) {
-        perror ("Error in joining the thread");
-        exit (EXIT_FAILURE);
-    }
-}
-
-/* Функция потока - выполняет широковещательную рассылку адреса и порта главного udp сервера */
+// Thread function - udp server port number and address broadcast
 void *broadcast (void *arg) {
-    struct thread_data *my_data = (struct thread_data *) arg;
-    struct sockaddr_in addr_client;
-    socklen_t addr_size = sizeof (struct sockaddr_in);
+    struct sockaddr_in udp_address = *((struct sockaddr_in *)arg);
+    struct ifaddrs *ifaddr;
+    socklen_t addr_size = sizeof(struct sockaddr_in);
+    int n = 0, i;
+    const int val = 1;
+    struct bc_data bcs[BC_FD_NUM];
 
-    while(1) {
-        if(sendto (my_data->broadcast_fd, &(my_data->udp_address), addr_size, 0, (struct sockaddr *) &(my_data->udp_bc_address), addr_size) == -1) {
-            close (my_data->broadcast_fd);
-            perror ("sendto error");
-            exit (EXIT_FAILURE);
+    __syscall(getifaddrs(&ifaddr));
+    while(ifaddr != NULL && i < BC_FD_NUM) {
+        if(ifaddr->ifa_addr == NULL
+            || ifaddr->ifa_addr->sa_family != AF_INET
+            || !(ifaddr->ifa_flags & IFLA_BROADCAST))
+            goto next_iface;
+
+        if(((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+            // Initialize socket descriptor
+            __syscall(bcs[i].broadcast_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+
+            // Setting up port number and address
+            bcs[i].udp_bc_address.sin_family = AF_INET;
+            bcs[i].udp_bc_address.sin_port = htons(PORT_NUM + 1);
+            bcs[i].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr;
+
+            // Configure the socket to broadcast
+            setsockopt(bcs[i].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
+            n++;
         }
-        printf ("data was sent to client\n");
-        sleep (1);
+
+next_iface:
+        ifaddr = ifaddr->ifa_next;
     }
 
-    pthread_exit (NULL);
+    while(true) {
+        for(i = 0; i < n; i++){
+            __syscall(sendto(bcs[i].broadcast_fd,
+            &(udp_address), addr_size, 0, 
+            (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
+            printf ("data was sent to client\n");
+        }
+        sleep(1);
+    }
+
+    // Unreachable code
+    // It will be neccessary before servers abnornal termination
+    //pthread_exit (NULL);
 }
 
-/* Карта заполняется единичками */
-void create_map (int map[ROW][COL]) {
+// Map filling with '0' - in test version
+void create_map (BCSMAP *map) {
     int i, j;
 
-    for (i = 0; i < ROW; i++) {
-        for (j = 0; j < COL; j++) {
-            map[i][j] = 1;
+    for (i = 0; i < map->height; i++) {
+        for (j = 0; j < map->width; j++) {
+            map->map_primitives[i * map->width + j] = 0;
         }
     }
 }
 
-/* Назначение игроку начальных координат */
-void init_start_xy (int map_state[ROW][COL], int *start_xy) {
+// Player coordinates assignment
+void init_start_xy (BCSMAP *map, uint16_t *start_xy) {
     int i, j;
 
-    for (i = 0; i < ROW; i++) {
-        for (j = 0; j < COL; j++) {
-            if (map_state[i][j] == 0) {
-                start_xy[0] = i; //y-координата
-                start_xy[1] = j; //x-координата
-                map_state[i][j] = 1;
+    for (i = 0; i < map->height; i++) {
+        for (j = 0; j < map->width; j++) {
+            if (map->map_primitives[i * map->width + j] == 0) {
+                start_xy[0] = i; //y-coordinate
+                start_xy[1] = j; //x-coordinate
+                map->map_primitives[i * map->width + j] = 1;
                 return;
             }
         }
     }
 }
 
-/* Заносим клиента в массив */
-void add_client (struct sockaddr_in *clients, struct sockaddr_in addr_client) {
+// Put client data into array
+void add_client (struct client_id *clients, struct sockaddr_in addr_client) {
     int i;
 
     for (i = 0; i < CLIENTS_NUM; i++) {
-        if ((clients[i].sin_port == 0) && (clients[i].sin_family == 0) && (clients[i].sin_addr.s_addr == 0)) {
-            clients[i] = addr_client;
+        if ((clients[i].cl_address.sin_port == 0) && 
+            (clients[i].cl_address.sin_family == 0) && 
+            (clients[i].cl_address.sin_addr.s_addr == 0)) {
+            clients[i].cl_address = addr_client;
+            clients[i].last_resp_time = time (NULL); //set current time as the last response time
             return;
         }
     }
 }
 
-/* Ищем клиента в массиве */
-int search_client (struct sockaddr_in *clients, struct sockaddr_in addr_client) {
+// Search client data in array, returns index of element 
+int search_client (struct client_id *clients, struct sockaddr_in addr_client) {
     int i;
     int num;
 
     for (i = 0; i < CLIENTS_NUM; i++) {
-        if ((clients[i].sin_addr.s_addr == addr_client.sin_addr.s_addr) && (clients[i].sin_port == addr_client.sin_port) && (clients[i].sin_family == addr_client.sin_family)) {
+        if ((clients[i].cl_address.sin_addr.s_addr == addr_client.sin_addr.s_addr) && 
+            (clients[i].cl_address.sin_port == addr_client.sin_port) && 
+            (clients[i].cl_address.sin_family == addr_client.sin_family)) {
             num = i;
             break;
         }
@@ -193,141 +185,122 @@ int search_client (struct sockaddr_in *clients, struct sockaddr_in addr_client) 
     return num;
 }
 
-/* Удаляем клиента из массива */
-void delete_client (struct sockaddr_in *clients, struct sockaddr_in addr_client) {
+// Remove client from array
+void delete_client (struct client_id *clients, struct sockaddr_in addr_client) {
     int num;
-    socklen_t addr_size = sizeof (struct sockaddr_in);
 
-    num = search_client (clients, addr_client);
-    memset (clients + num*addr_size, 0, addr_size);
+    num = search_client(clients, addr_client);
+    memset(clients + num*sizeof(struct client_id), 0, sizeof(struct client_id));
 }
 
 int main(int argc, char **argv) {
-	pthread_attr_t attr; //атрибут для создания потока
+    pthread_attr_t attr; //thread attribute
     pthread_t thread;
     struct sockaddr_in addr_tcp, addr_udp, addr_bc_udp, addr_client;
-    struct epoll_event events[2]; //события, которые мы ждём
-    struct epoll_event event_happened; //событие, которое произошло
+    struct epoll_event event;
     socklen_t addr_size = sizeof (struct sockaddr_in);
-    struct thread_data udp_data;
-    struct sockaddr_in *clients = malloc(sizeof(struct sockaddr_in) * CLIENTS_NUM);
+    struct client_id *clients = malloc(sizeof(struct client_id) * CLIENTS_NUM);
     void *status;
-    char *msg;
-    int epfd; //экземпляр опроса событий
-    int u_fd, t_fd, bc_fd, s_fd; //дескрипторы udp и tcp сокетов
+    char msg[UDP_MAXLEN];
+    int epfd; //event polling instance
+    int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
     int result;
-    int i,j;
-    int start_xy[2]; //начальные координаты игрока
-    int map[ROW][COL];
-    int map_state[ROW][COL]; //состояние карты - координаты игроков
+    uint16_t start_xy[2]; //initial player coordinates
 
+    //create_map (&map);
+    BCSMAP map = {
+          .width = 80
+        , .height = 24
+        , .map_primitives = calloc(80 * 24, 1)
+    };
 
-    create_map (map);
-
-    memset (clients, 0, addr_size * CLIENTS_NUM); //обнуляем массив структур
-    memset (&map_state, 0, ROW*COL*sizeof(int)); //все координаты для игроков изначально свободны
+    BCSMAP map_state = {
+          .width = map.width
+        , .height = map.height
+        , .map_primitives = calloc(80 * 24, 1)
+    };
     
+    memset(clients, 0, sizeof(struct client_id) * CLIENTS_NUM); //clients array nullification
+
     u_fd = udp_bind (&addr_udp, addr_size);
     t_fd = tcp_bind (&addr_tcp, addr_size);
-    bc_fd = bc_udp_init (&addr_bc_udp, addr_size);
 
-    /* Заполняем структуру-параметр функции потока */
-    udp_data.broadcast_fd = bc_fd;
-    udp_data.udp_address = addr_udp;
-    udp_data.udp_bc_address = addr_bc_udp;
-
-    /* Инициализация и установка атрибута */
+    // Initialize thread attribute
+    // Thread attribute `joinable' tells, if the system will wait for its termination
+    // Kramarenko said that some systems do not have this attribute by default
     pthread_attr_init (&attr);
     pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
 
-    result = pthread_create (&thread, &attr, broadcast, (void*) &udp_data); //создание потока
-    errorCreateThread (result); //контроль ошибок
+    lassert((result = pthread_create (&thread, &attr, broadcast, (void*) &addr_udp)) == 0); //thread creation
 
-    /* Создаём контекст опроса событий  */
-    epfd = epoll_create1 (0);
-    if (epfd < 0) {
-        perror ("epoll_create1");
-        exit (EXIT_FAILURE);
-    }
+    // Set up the event polling instance
+    __syscall(epfd = epoll_create1 (0));
 
-    /* Добавляем к экземпляру опроса событий epfd новое наблюдение 
-    для файла, связанного с дескриптором t_fd*/
-    events[0].data.fd = t_fd;
-    events[0].events = EPOLLIN | EPOLLET;
-    result = epoll_ctl (epfd, EPOLL_CTL_ADD, t_fd, &events[0]);
-    if (result) {
-        perror ("epoll_ctl tcp");
-        exit (EXIT_FAILURE);
-    }
+    // Add new notice to epfd for file with t_fd descriptor
+    event.data.fd = t_fd;
+    event.events = EPOLLIN | EPOLLET;
+    __syscall(epoll_ctl(epfd, EPOLL_CTL_ADD, t_fd, &event));
 
-    /* Добавляем к экземпляру опроса событий epfd новое наблюдение 
-    для файла, связанного с дескриптором u_fd*/
-    events[1].data.fd = u_fd;
-    events[1].events = EPOLLIN | EPOLLET;
-    result = epoll_ctl (epfd, EPOLL_CTL_ADD, u_fd, &events[1]);
-    if (result) {
-        perror ("epoll_ctl udp");
-        exit(EXIT_FAILURE);
-    }
+    // Add new notice to epfd for file with u_fd descriptor
+    event.data.fd = u_fd;
+    event.events = EPOLLIN | EPOLLET;
+    __syscall(epoll_ctl(epfd, EPOLL_CTL_ADD, u_fd, &event));
 
-    while(1){
-    	/* Все установлено, блокируем */
-        result = epoll_wait (epfd, &event_happened, 1, -1);
-        if (result < 0) {
-            perror ("epoll_wait");
+    while(true) {
+        // Lock
+        __syscall(result = epoll_wait (epfd, &event, 1, -1));
+
+        // Bad event happened
+        if ((event.events & EPOLLERR) ||
+            (event.events & EPOLLHUP)) {
+            fprintf(stderr, "epoll error\n");
         }
 
-        /* Подключающемуся клиенту отправляется карта и связь по tcp обрывается */
-        if (event_happened.data.fd == t_fd) { //проверка на событие
-            if ((s_fd = accept (t_fd, (struct sockaddr *) &addr_client, &addr_size)) == -1) {
-                perror ("accept error");
-            }
+        // Connect with client, send map to him and unconnect
+        if (event.data.fd == t_fd) { //check event
+            __syscall(s_fd = accept (t_fd, (struct sockaddr *) &addr_client, &addr_size));
 
-            if (send (s_fd, &map, ROW*COL*sizeof(int), 0) == -1) {
-                close(s_fd);
-                perror("send error");
-            }
+            // At this moment, we suppose that struct includes:
+            // width (2 bytes), height (2 bytes) and the pointer to primitives
+            _Static_assert((sizeof(BCSMAP) - sizeof(void*) == 4), "the size of BCSMAP was changed");
+            __syscall(send (s_fd, &map, 4, 0));
+            __syscall(send (s_fd, map.map_primitives, map.width * map.height, 0));
             printf("map was sent to client\n");
 
             close(s_fd);
         }
 
-        /* Сервер ждёт сообщение от клиента по udp, заносит его данные в массив
-        и отправляет клиенту координаты начального положения*/
-        if (event_happened.data.fd == u_fd) { //проверка на событие
-            msg = malloc(MSG_SIZE);
 
-            /* Принимаем сообщение от клиента, сохраняем его данные в массив*/
-            if (recvfrom(u_fd, msg, MSG_SIZE, 0, (struct sockaddr *) &addr_client, &addr_size) == -1) {
-                perror("recvfrom error");
-                free(msg);
-            }
-            printf("received from client: %s\n", msg);
-            free(msg);
+        // Receive message from client by udp, add client data to array
+        // and send him his initial coordinates
+        if (event.data.fd == u_fd) { //check event
+            // Receive message from client 
+            __syscall(result = recvfrom(u_fd, msg, UDP_MAXLEN, 0, (struct sockaddr*)&addr_client, &addr_size));
+            printf("received from client: %.*s\n", result, msg);
 
-            /* Заносим клиента в массив */
+            // Add client to array
             add_client(clients, addr_client);
 
-            /* Выбираем для клиента свободную координату на карте */
-            init_start_xy(map_state, start_xy);
+            // Choose free map coordinates for new client
+            init_start_xy(&map_state, start_xy);
 
-            /* Отправляем клиенту его координату на карте */
-            if (sendto(u_fd, &start_xy, sizeof(int)*2, 0, (struct sockaddr *) &addr_client, addr_size) == -1) {
-                perror("sendto error");
-            }
+            // Send coordinates to client
+            __syscall(sendto(u_fd, &start_xy, sizeof(int)*2, 0, (struct sockaddr *) &addr_client, addr_size));
             printf("coordinates were sent to client");
             delete_client(clients, addr_client);
         }
     }
 
+    // Unreachable code
+    // It will be neccessary before servers abnornal termination
+    /* pthread_join(thread, &status); 
+    lassert(status == 0);
+    pthread_attr_destroy(&attr);
 
-    pthread_join (thread, &status); 
-    errorJoinThread (status); //контроль ошибок
-    
-    pthread_attr_destroy (&attr);
     free(clients);
-    close (t_fd);
-    close (u_fd);
-    exit (EXIT_SUCCESS);
-	return EXIT_SUCCESS;
+
+    close(t_fd);
+    close(u_fd); */
+
+    return(EXIT_SUCCESS);
 }
