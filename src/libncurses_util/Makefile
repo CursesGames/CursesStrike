@@ -6,7 +6,7 @@ CFLAGS_LOCAL := -std=c99
 
 LOCAL_HEADERS := $(wildcard *.h)
 LOCAL_SOURCES := $(wildcard *.c)
-LOCAL_DEPENDENCIES := 
+LOCAL_STATIC_DEPENDENCIES := 
 LOCAL_MODULE := libncurses_util.a
 
 include $(BUILD_STATIC_LIBRARY)
