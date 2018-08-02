@@ -9,7 +9,6 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <errno.h>
 #include <string.h>
 #include <sys/time.h>
 // support Big Endian systems as MIPS
@@ -22,7 +21,6 @@
 #define LISTEN_NUM 16
 #define TIMEOUT 10
 #define CLIENTS_NUM 16
-#define UDP_MAXLEN 65535
 #define BC_FD_NUM 5
 
 // Data for broadcast sockets
@@ -40,7 +38,7 @@ int udp_bind(struct sockaddr_in *addr_udp, socklen_t addr_size) {
 
     // Setting up port number and address
     addr_udp->sin_family = AF_INET;
-    addr_udp->sin_port = htons(DEFAULT_PORT);
+    addr_udp->sin_port = htons(BCSSERVER_DEFAULT_PORT);
     addr_udp->sin_addr.s_addr = INADDR_ANY;
 
     // Link address with socket descriptor
@@ -58,7 +56,7 @@ int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
 
     // Setting up port number and address
     addr_tcp->sin_family = AF_INET;
-    addr_tcp->sin_port = htons(DEFAULT_PORT);
+    addr_tcp->sin_port = htons(BCSSERVER_DEFAULT_PORT);
     addr_tcp->sin_addr.s_addr = INADDR_ANY;
 
     // Link address with socket descriptor
@@ -92,7 +90,7 @@ void *broadcast (void *arg) {
 
             // Setting up port number and address
             bcs[n].udp_bc_address.sin_family = AF_INET;
-            bcs[n].udp_bc_address.sin_port = htons(DEFAULT_PORT + 1);
+            bcs[n].udp_bc_address.sin_port = htons(BCSSERVER_BCAST_PORT);
             bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr;
 
             // Configure the socket to broadcast
@@ -106,7 +104,7 @@ next_iface:
 
     BCSBEACON to_send = {
           .magic = htobe64(BCSBEACON_MAGIC)
-        , .port = DEFAULT_PORT
+        , .port = BCSSERVER_DEFAULT_PORT
         , .description = "Curses-Strike Server v0.1 by Sl1vo4ka"
     };
 
@@ -231,7 +229,7 @@ int main(int argc, char **argv) {
     BCSMSG cl_msg;
     BCSMSGREPLY serv_msg;
     void *status;
-    char msg[UDP_MAXLEN];
+    char msg[BCSDGRAM_MAX];
     int epfd; //event polling instance
     int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
     int result;
@@ -293,7 +291,13 @@ int main(int argc, char **argv) {
             // At this moment, we suppose that struct includes:
             // width (2 bytes), height (2 bytes) and the pointer to primitives
             _Static_assert((sizeof(BCSMAP) - sizeof(void*) == 4), "the size of BCSMAP was changed");
-            __syscall(send (s_fd, &map, 4, 0));
+			// Str1ker, 03.08.2018: proto convention
+            //__syscall(send (s_fd, &map, 4, 0));
+			uint16_t tmp = htobe16(map.width);
+			__syscall(send (s_fd, &tmp, 2, 0));
+			tmp = htobe16(map.height);
+			__syscall(send (s_fd, &tmp, 2, 0));
+
             __syscall(send (s_fd, map.map_primitives, map.width * map.height, 0));
             printf("map was sent to client\n");
 
@@ -306,6 +310,10 @@ int main(int argc, char **argv) {
         if (event.data.fd == u_fd) { //check event
             // Receive message-CONNECT from client 
             __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
+			// Str1ker, 03.08.2018: ignore beacon packets
+			if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
+				continue;
+
             printf("received from client: %.*s\n", result, msg);
             
             // Set initial message parameters
@@ -323,16 +331,6 @@ int main(int argc, char **argv) {
             __syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
             printf("coordinates were sent to client");
             delete_client(clients, addr_client);
-            
-            // Receive message-CONNECT2
-            __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-            printf("received from client: %.*s\n", result, msg);
-
-            // Change client stat if the previous was BCSCLST_CONNECTING
-            if(clients[id].public_info.state == BCSCLST_CONNECTING){
-                clients[id].public_info.state = BCSCLST_CONNECTED;
-            }
-            
         }
     }
 

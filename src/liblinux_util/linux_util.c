@@ -12,10 +12,12 @@ bool verbose = false;
 int syscall_print_error(const char *x, const char *file, const int line, const int err_no) {
 	if (err_no != 0) {
 		char *errstr = strerror(err_no);
-		logprint("[x] syscall err: '%s'\n\tat %s:%d (%d = %s)\n", x, file, line, err_no, errstr);
+		logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST 
+			" syscall err: '%s'\n\tat %s:%d (%d = %s)\n", x, file, line, err_no, errstr);
 	}
 	else {
-		logprint("[x] runtime err: '%s'\n\tat %s:%d\n", x, file, line);
+		logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST 
+			" runtime err: '%s'\n\tat %s:%d\n", x, file, line);
 	}
 	return EXIT_SUCCESS;
 }

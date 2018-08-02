@@ -4,18 +4,41 @@
 #include "../liblinux_util/mscfix.h"
 
 #include <stdint.h>
-#include <sys/time.h>
-#include <netinet/in.h>
 #include <stdbool.h>
+#include <netinet/in.h>
+
+// this include is important on MIPS for `struct timeval'
+// ReSharper disable once CppUnusedIncludeDirective
+#include <sys/time.h>
+
+///////////////////////////////////////////////////
+//          ДОГОВОРЁННОСТЬ ПО ПРОТОКОЛУ          //
+// Все числа длиной более байта (2, 4, 8 байт)   //
+// передавать по сети в формате Big-Endian!!!    //
+// Для преобразования в Big-Endian использовать: //
+//   htobe16(), htobe32(), htobe64()             //
+// Для обратного преобразования числа,           //
+// полученного из сети, в нативный вид:          //
+//   be16toh(), be32toh(), be64toh()             //
+///////////////////////////////////////////////////
 
 #define BCSBEACON_MAGIC 0x1324214277da7aff
 #define BCSBEACON_DESCRLEN 45
-#define DEFAULT_PORT 2018
+#define BCSSERVER_DEFAULT_PORT 2018
+
+// broadcast to the same port
+#define BCSSERVER_BCAST_PORT BCSSERVER_DEFAULT_PORT
 
 // from csds.c
-#define BCSPLAYER_NICKLEN 20
+#define BCSDGRAM_MAX 65535
+#define BCSPLAYER_NICKLEN 19
+
+// from cs.c
+#define BCSRECV_TIMEO 1000
+
 // deprecated
 #define NICK_SIZE BCSPLAYER_NICKLEN
+//#define DEFAULT_PORT BCSSERVER_DEFAULT_PORT
 
 // TODO: export symbols to manipulate protocol datagrams
 typedef struct __point {
@@ -84,8 +107,8 @@ typedef struct __bcsclient_info_public {
 typedef struct __bcsclient_info_public_ext {
 	uint16_t frags;
 	uint16_t deaths;
-	char nickname[BCSPLAYER_NICKLEN + 1]; // 20 + '\0'
-} BCSCLIENT_PUBLIC_EXT; // aligned to 32 bytes on x64, FIXME
+	char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
+} BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
 
 typedef struct __bcsclient_info_private {
 	struct sockaddr_in endpoint;
@@ -101,7 +124,8 @@ typedef struct {
 
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
-	int32_t packet_no; // TODO: номер может переполниться, добавить обработку такой ситуации
+// TODO: номер может переполниться, добавить обработку такой ситуации
+	int32_t packet_no;
 	BCSACTION action;
 // accurate to microseconds
 	struct timeval time_gen;
@@ -130,6 +154,7 @@ typedef struct __bcsmsg_announce {
 	BCSCLIENT_PUBLIC *public_info;
 } BCSMSGANNOUNCE;
 
+// Структура широковещательного сообщения от сервера
 typedef struct __bcs_beacon {
 // константа: BCSBEACON_MAGIC
 	uint64_t magic;
@@ -139,6 +164,19 @@ typedef struct __bcs_beacon {
 	char description[BCSBEACON_DESCRLEN + 1];
 } BCSBEACON;
 
-bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg);
-bool bcsproto_recv(int sockfd, struct sockaddr_in *client_endpoint_from, BCSMSG *msg);
-bool bcsproto_validate_message(BCSMSG *msg);
+// unified interface. good to think about it.
+extern bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg);
+extern bool bcsproto_recv(int sockfd, struct sockaddr_in *client_endpoint_from, BCSMSG *msg);
+extern bool bcsproto_validate_message(BCSMSG *msg);
+
+// for simpler message generation
+extern uint32_t bcsproto_next_packet_no;
+
+// this function is not reentrant (and so not thread-safe)
+extern void bcsproto_new_packet(BCSMSG *msg);
+
+// this function is a clone of `sendto' for packet duplication
+extern ssize_t sendto2(
+	int fd, const void *buf, size_t n,
+	int flags, struct sockaddr *addr, socklen_t addr_len
+);

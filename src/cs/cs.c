@@ -6,29 +6,29 @@
 #include <stdlib.h>
 #include <time.h>
 #include <ncursesw/ncurses.h>
+
+#include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
+#include <ifaddrs.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <sys/epoll.h>
+#include <arpa/inet.h>
+#include <linux/if_link.h>
 
 #include "../libncurses_util/ncurses_util.h"
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
-#include <sys/socket.h>
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include <linux/if_link.h>
-#include "../libvector/vector.h"
-#include <sys/epoll.h>
 #include "../libbcsproto/bcsproto.h"
-#include <unistd.h>
-#include <sys/time.h>
+#include "../libvector/vector.h"
 
-#ifndef DEFAULT_PORT
-#define DEFAULT_PORT 2018
-#endif
-
-#ifndef DGRAM_MAX
-#define DGRAM_MAX 65535
-#endif
+// catching broadcast messages timeout
+#define BCAST_SCAN_TIMEOUT_SEC 5
+// assume no more than 3 good ifaces by default
+#define BCSIFACES_APPROX 3
+// assume no more than 10 good servers by default
+#define BCSSERVERS_APPROX 10
 
 // taken from Bionicle Commander: https://github.com/Str1ker17/EltexLearning/blob/aa2fddc/src/bc/bc.c#L56
 typedef enum {
@@ -66,7 +66,7 @@ typedef union __bcast_un {
 } BCAST_UN;
 
 typedef union __bcast_srv_ep {
-	struct {
+	struct __endpoint {
 		in_addr_t addr;
 		uint16_t port;
 		uint16_t zero; // should be 0 after init
@@ -90,9 +90,12 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 	struct ifaddrs *ifap_head;
 	__syscall(getifaddrs(&ifap_head));
 	struct ifaddrs *ifap = ifap_head;
-	lassert(vector_init(ipv4_faces, 3)); // assume no more than 3 good ifaces by default
+	lassert(vector_init(ipv4_faces, BCSIFACES_APPROX));
 	while(ifap != NULL) {
-		if(ifap->ifa_addr != NULL && ifap->ifa_addr->sa_family == AF_INET) {
+		if(ifap->ifa_addr != NULL 
+			&& ifap->ifa_addr->sa_family == AF_INET 
+			&& ifap->ifa_flags & IFLA_BROADCAST
+		) {
 			ALOGD("iface: %s\n", ifap->ifa_name);
 			ifaddr = ((struct sockaddr_in*)ifap->ifa_addr)->sin_addr.s_addr;
 			lassert(inet_ntop(AF_INET, &ifaddr, addrstr, INET_ADDRSTRLEN));
@@ -100,22 +103,18 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 			un.v4.mask = ((struct sockaddr_in*)ifap->ifa_netmask)->sin_addr.s_addr;
 			lassert(inet_ntop(AF_INET, &(un.v4.mask), addrstr, INET_ADDRSTRLEN));
 			logprint("mask: %s\t", addrstr);
-			
-			if(ifap->ifa_flags & IFLA_BROADCAST) {
-				logprint("\t");
 
-				un.v4.bcast = ((struct sockaddr_in*)ifap->ifa_ifu.ifu_broadaddr)->sin_addr.s_addr;
-				if((ifaddr | (~(un.v4.mask))) != un.v4.bcast) {
-					logprint(ANSI_BKGRD_BRIGHT_RED ANSI_COLOR_WHITE);
-				}
-				lassert(inet_ntop(AF_INET, &un.v4.bcast, addrstr, INET_ADDRSTRLEN));
-				logprint("bcast: %s\t", addrstr);
-				logprint(ANSI_CLRST);
-
-				// add to vector
-				lassert(vector_push_back(ipv4_faces, un._vval));
-				count++;
+			un.v4.bcast = ((struct sockaddr_in*)ifap->ifa_ifu.ifu_broadaddr)->sin_addr.s_addr;
+			if((ifaddr | (~(un.v4.mask))) != un.v4.bcast) {
+				logprint(ANSI_BKGRD_BRIGHT_RED ANSI_COLOR_WHITE);
 			}
+			lassert(inet_ntop(AF_INET, &un.v4.bcast, addrstr, INET_ADDRSTRLEN));
+			logprint("bcast: %s\t", addrstr);
+			logprint(ANSI_CLRST);
+
+			// add to vector
+			lassert(vector_push_back(ipv4_faces, un._vval));
+			count++;
 
 			logprint("\n");
 		}
@@ -124,6 +123,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 		if(ifap == ifap_head)
 			break;
 	}
+	freeifaddrs(ifap_head);
 	return count;
 }
 
@@ -153,7 +153,7 @@ void draw_window(FPSTHREAD *prm) {
 		}
 		else {
 			// do not check return value because text may be longer than window width
-			mvwaddstr(stdscr, 0, 0, "Map is loading.");
+			mvwaddstr(stdscr, 0, 0, "The game is on");
 			pthread_mutex_lock(prm->mutex_data);
 			prm->delay_val = (prm->ticks / 15) % 6;
 			pthread_mutex_unlock(prm->mutex_data);
@@ -189,26 +189,31 @@ int main(int argc, char **argv) {
 	/////////////////////////
 
 	// TODO: быстрое подключение через командную строку
+	verbose = true;
 
-	char buf[DGRAM_MAX];
+	char buf[BCSDGRAM_MAX];
+	char addrstr[INET_ADDRSTRLEN];
 	// узнать все пригодные интерфейсы
 	VECTOR ifaces;
-	size_t iface_count = init_broadcast_receiver(&ifaces);
-
-	int *ubcls = (int*)malloc(sizeof(int) * ifaces.size);
+	size_t iface_count;
 
 	int epollfd;
 	struct epoll_event ev_catch;
-	//int reuse_port = 1;
+	int reuse_port = 1;
+
+start_bcast_scan:	
+	iface_count = init_broadcast_receiver(&ifaces);
+
+	int *ubcls = (int*)malloc(sizeof(int) * ifaces.size);
 	__syscall(epollfd = epoll_create1(0));
 	for(uint i = 0; i < iface_count; i++) {
 		struct sockaddr_in sin = {
 			  .sin_addr.s_addr = ((BCAST_UN*)(&(ifaces.array[i])))->v4.bcast
-			, .sin_port = htons(DEFAULT_PORT + 1)
+			, .sin_port = htons(BCSSERVER_BCAST_PORT)
 			, .sin_family = AF_INET
 		};
 		__syscall(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
-		//__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
+		__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
 		__syscall(bind(ubcls[i], (struct sockaddr*)&sin, sizeof(sin)));
 
 		struct epoll_event evt = {
@@ -220,18 +225,20 @@ int main(int argc, char **argv) {
 
 	VECTOR servers;
 	lassert(vector_init(&servers, 10)); // TODO: get rid of magic number
-
+	uint32_t number = 0;
 	struct timeval tv_last, tv_now, tv_diff;
 	__syscall(gettimeofday(&tv_last, NULL));
+
 	ALOGI("Scanning for servers, please wait...\n");
 	while(true) {
 		int ret;
-		__syscall(ret = epoll_wait(epollfd, &ev_catch, 1, 5000));
+		__syscall(ret = epoll_wait(epollfd, &ev_catch, 1, BCAST_SCAN_TIMEOUT_SEC * 1000));
 		if(ret == 0) {
-			ALOGI("No broadcast from local servers\n");
+			ALOGI("No broadcast into local networks, exiting.\n");
+			ALOGI("Maybe connect to server by IP:Port, or create your own?\n");
 			// TODO: ask for endpoint
 			//break;
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 		// ret should be = 1
 		lassert(ret == 1);
@@ -244,22 +251,23 @@ int main(int argc, char **argv) {
 		}
 
 		if(ev_catch.events & EPOLLIN) {
-			ssize_t len = recvfrom(ev_catch.data.fd, buf, DGRAM_MAX, 0
+			ssize_t len = recvfrom(ev_catch.data.fd, buf, BCSDGRAM_MAX, 0
 				, (struct sockaddr*)&srv_sin, &sa_len);
 			BCSBEACON *beacon = (BCSBEACON*)buf;
-			if(beacon->magic != htobe64(BCSBEACON_MAGIC)) {
+			if(be64toh(beacon->magic) != BCSBEACON_MAGIC) {
+				// log format is reversed for readability
 				ALOGW("Received beacon magic %016lx != %016lx incorrect, skipping\n"
-					, beacon->magic, (uint64_t)htobe64(BCSBEACON_MAGIC));
+					, beacon->magic, htobe64(BCSBEACON_MAGIC));
 				continue;
 			}
 
 			if(len < (ssize_t)sizeof(BCSBEACON)) {
-				ALOGW("Received beacon length is too short, skipping\n");
+				ALOGW("Received beacon is too short, skipping\n");
 				continue;
 			}
 
 			if(len > (ssize_t)sizeof(BCSBEACON)) {
-				ALOGW("Received beacon length is too long\n");
+				ALOGW("Received beacon is too long\n");
 			}
 
 			// print server if new
@@ -279,10 +287,12 @@ int main(int argc, char **argv) {
 			}
 
 			lassert(vector_push_back(&servers, srv_new._vval));
-			char addrstr[INET_ADDRSTRLEN];
 			lassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
-			printf("\t%s:%hu\t%.*s\n"
-				, addrstr, beacon->port, BCSBEACON_DESCRLEN, beacon->description);
+			printf("\t%s:%hu\t%.*s - %u\n"
+				, addrstr, be16toh(beacon->port), BCSBEACON_DESCRLEN, beacon->description
+				, number + 1
+			);
+			++number;
 			__syscall(gettimeofday(&tv_last, NULL));
 			continue;
 		}
@@ -290,26 +300,132 @@ next_epevent:
 		__syscall(gettimeofday(&tv_now, NULL));
 		timersub(&tv_now, &tv_last, &tv_diff);
 		if(tv_diff.tv_sec >= 5) {
-			ALOGI("No more servers detected (2)\n");
+			ALOGI("Server scan finished\n");
 			break;
 		}
 	}
-	ALOGI("Press Enter to continue... ");
-	getchar();
 
 	// TODO: close b/cast listeners there?
 	for(size_t i = 0; i < iface_count; i++) {
 		close(ubcls[i]);
 	}
 	free(ubcls);
+	close(epollfd);
+
+	// if we are there, then servers.size > 0?
+	lassert(servers.size > 0);
+	uint32_t idx;
+	while(true) {
+		idx = 1;
+		printf("Enter 0 to rescan, or the number of server to connect [1]: ");
+		fgets(buf, 256, stdin); // TODO: buffer overflow, check?
+		if(buf[0] == '\n')
+			break;
+		if(sscanf(buf, "%u", &idx) == 1 && idx <= servers.size)
+			break;
+		printf("Sorry you can't!\n");
+	}
+
+	if(idx == 0) {
+		vector_free(&servers);
+		vector_free(&ifaces);
+		goto start_bcast_scan; // FIXME
+	}
+	
+	// connect to selected server
+	BCAST_SRV_UN *srv = (BCAST_SRV_UN*)(&(servers.array[idx - 1]));
+	struct sockaddr_in sin = {
+		  .sin_addr = srv->endpoint.addr
+		, .sin_port = srv->endpoint.port
+		, .sin_family = AF_INET
+	};
+	lassert(inet_ntop(AF_INET, &(srv->endpoint.addr), addrstr, INET_ADDRSTRLEN) != NULL);
+	ALOGI("Connecting to %s:%hu\n", addrstr, ntohs(srv->endpoint.port));
+
+	VERBOSE ALOGV("Creating UDP socket... ");
+	int sock;
+	__syscall(sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+	struct timeval rcvtimeo = {
+		  .tv_sec = BCSRECV_TIMEO
+		, .tv_usec = 0
+	};
+	__syscall(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
+	VERBOSE logprint("OK.\n");
+
+	VERBOSE ALOGV("Sending CONNECT... ");
+	// есть смысл сначала создать структуру, а только потом проштамповать
+	// зачем? чтобы метка времени создания была ближе к времени отправки
+	BCSMSG msg = {
+		  .action = htobe32(BCSACTION_CONNECT)
+	};
+	bcsproto_new_packet(&msg);
+	// TODO: use sendto2
+	sysassert(sendto(sock, &msg, sizeof(msg), 0, (struct sockaddr*)&sin, sizeof(sin)) == sizeof(msg));
+	VERBOSE logprint("OK.\n");
+
+	ssize_t rcvd;
+	struct sockaddr_in sin_src;
+	socklen_t src_alen = sizeof(sin_src);
+	while(true) {
+		__syscall(rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (struct sockaddr*)&sin_src, &src_alen));
+		if(    sin_src.sin_addr.s_addr != sin.sin_addr.s_addr
+			|| sin_src.sin_port        != sin.sin_port
+		) {
+			ALOGD("Source endpoint mismatch, skipping\n");
+			continue;
+		}
+
+		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
+		if(repl->packet_no != msg.packet_no) {
+			ALOGD("Packet no mismatch (sent %u, got %u), skipping\n"
+				, be32toh(msg.packet_no), be32toh(repl->packet_no));
+			continue;
+		}
+
+		if(be32toh(repl->type) != BCSREPLT_MAP) {
+			ALOGD("Reply type mismatch (expecting %u, got %u), skipping\n"
+				, BCSREPLT_MAP, be32toh(repl->type));
+			continue;
+		}
+
+		// if we are there: source matches, packet no and reply type too
+		break;
+	}
+
+	VERBOSE ALOGV("Server told to download the map.\n");
+	VERBOSE ALOGD("Connecting to the TCP socket... ");
+	int sock_tcp;
+	__syscall(sock_tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+	__syscall(connect(sock_tcp, (struct sockaddr*)&sin, sizeof(sin)));
+	VERBOSE logprint("OK.\n");
+
+	BCSMAP map = {
+		.map_primitives = NULL
+	};
+	VERBOSE ALOGV("Receiving map params... ");
+	sysassert(recv(sock_tcp, &map, 4, 0) == 4); // FIXME: magic const 4 is a sizeof (w+h)
+	map.width = be16toh(map.width);
+	map.height = be16toh(map.height);
+	VERBOSE logprint("%hux%hu\n", map.width, map.height);
+
+	ssize_t size_in_bytes = map.width * map.height;
+	map.map_primitives = malloc(size_in_bytes);
+	VERBOSE ALOGV("Receiving map data... ");
+	sysassert(recv(sock_tcp, &map.map_primitives, size_in_bytes, 0) == size_in_bytes);
+	VERBOSE logprint("%lu bytes OK.\n", size_in_bytes);
+
+	close(sock_tcp);
+
+	msg.action = BCSACTION_CONNECT2;
+	bcsproto_new_packet(&msg);
+	VERBOSE ALOGV("Sending CONNECT2... ");
+	sysassert(sendto(sock, &msg, sizeof(msg), 0, (struct sockaddr*)&sin, sizeof(sin)) == sizeof(msg));
+	VERBOSE logprint("OK.\n");
+
+	// прелюдия закончена, мы должны быть на сервере.
 
 	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_mutex_t mutex_frame = PTHREAD_MUTEX_INITIALIZER;
-	BCSMAP map = {
-		  .width = 80
-		, .height = 24
-		, .map_primitives = NULL
-	};
 	srand(time(NULL));
 
 	// NCurses
@@ -320,7 +436,7 @@ next_epevent:
 	nassert(noecho());
 
 	nassert(start_color());
-	nassert(init_pair(CPAIR_CELL_BLANK, COLOR_WHITE, COLOR_BLUE)); // empty cell
+	nassert(init_pair(CPAIR_CELL_BLANK, COLOR_WHITE, COLOR_BLACK)); // empty cell
 	nassert(init_pair(CPAIR_PLAYER_SELF, COLOR_WHITE, COLOR_GREEN)); // me
 	nassert(init_pair(CPAIR_PLAYER_ENEMY, COLOR_WHITE, COLOR_RED)); // opposite
 

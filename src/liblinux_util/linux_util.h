@@ -59,8 +59,11 @@
 #define ALOGV(...) logprint(ANSI_BKGRD_WHITE ANSI_COLOR_BLACK "[V]" ANSI_CLRST " " __VA_ARGS__)
 
 // assert (release-time)
+// м€гка€ проверка услови€. напечатает ошибку, но выполнение не прервЄтс€
 #define lassert(x) (void)((!!(x)) || syscall_print_error(#x, __FILE__, __LINE__, 0))
+// жЄстка€ проверка услови€. напечатает ошибку и развалит программу через abort()
 #define sysassert(x) (void)((!!(x)) || syscall_error(#x, __FILE__, __LINE__))
+// жЄстка€ проверка услови€, как и выше, ориентированна€ на системные вызовы
 #define __syscall(x) sysassert((x) != -1)
 
 // debug
