@@ -2,6 +2,7 @@
 Status of `master` on x86_64: [![Build Status](https://travis-ci.com/CursesGames/CursesStrike.svg?branch=master)](https://travis-ci.com/CursesGames/CursesStrike)
 
 This is a 2D-shooter with multiplayer, based on NCurses.
+
 Also known as "Bionicle Counter-Strike", but "Curses-Strike" sounds better.
 
 How to build:
@@ -13,6 +14,7 @@ How to build:
 - If you want a single target, just point it, for example: `make cs` or `make csds`
 
 Please note that cross-compiling is a beta feature and something may fail! :(
+
 Feel free to send issues and pull requests.
 
-Copyleft (c) cuzwearepanda, 2018
+Copyleft (c) Linux Flowers, 2018
