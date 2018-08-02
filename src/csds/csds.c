@@ -12,6 +12,8 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/time.h>
+// support Big Endian systems as MIPS
+#include <endian.h>
 
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
@@ -91,7 +93,7 @@ void *broadcast (void *arg) {
             // Setting up port number and address
             bcs[n].udp_bc_address.sin_family = AF_INET;
             bcs[n].udp_bc_address.sin_port = htons(DEFAULT_PORT + 1);
-            bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr;
+            bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr;
 
             // Configure the socket to broadcast
             setsockopt(bcs[n].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
@@ -103,9 +105,9 @@ next_iface:
     }
 
     BCSBEACON to_send = {
-          .magic = BCSBEACON_MAGIC
+          .magic = htobe64(BCSBEACON_MAGIC)
         , .port = DEFAULT_PORT
-        , .description = "Curses-Strike Test Server"
+        , .description = "Curses-Strike Server v0.1 by Sl1vo4ka"
     };
 
     while(true) {
@@ -113,7 +115,7 @@ next_iface:
             __syscall(sendto(bcs[i].broadcast_fd,
             &(to_send), sizeof(BCSBEACON), 0, 
             (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
-            printf ("data was sent to client\n");
+            ALOGV("beacon sent to %s:%hu\n", inet_ntoa(bcs[i].udp_bc_address.sin_addr), ntohs(bcs[i].udp_bc_address.sin_port));
         }
         sleep(1);
     }

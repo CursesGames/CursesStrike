@@ -12,6 +12,23 @@
 #include "../libncurses_util/ncurses_util.h"
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
+#include <sys/socket.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
+#include <linux/if_link.h>
+#include "../libvector/vector.h"
+#include <sys/epoll.h>
+#include "../libbcsproto/bcsproto.h"
+#include <unistd.h>
+#include <sys/time.h>
+
+#ifndef DEFAULT_PORT
+#define DEFAULT_PORT 2018
+#endif
+
+#ifndef DGRAM_MAX
+#define DGRAM_MAX 65535
+#endif
 
 // taken from Bionicle Commander: https://github.com/Str1ker17/EltexLearning/blob/aa2fddc/src/bc/bc.c#L56
 typedef enum {
@@ -40,10 +57,75 @@ typedef struct {
 	int16_t me_y;
 } FPSTHREAD;
 
+typedef union __bcast_un {
+	struct {
+		in_addr_t bcast;
+		in_addr_t mask;
+	} v4;
+	uint64_t _vval;
+} BCAST_UN;
+
+typedef union __bcast_srv_ep {
+	struct {
+		in_addr_t addr;
+		uint16_t port;
+		uint16_t zero; // should be 0 after init
+	} endpoint;
+	uint64_t _vval;
+} BCAST_SRV_UN;
+
+typedef BCSBEACON BCAST_SRV;
+
 void draw_window(FPSTHREAD *prm);
 
 // WARNING: this is a workaround for dump C libraries like musl
 typedef union sigval sigval_t;
+
+// Создаёт вектор интерфейсов. Вектор может быть неинициализированным
+size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
+	char addrstr[INET_ADDRSTRLEN];
+	in_addr_t ifaddr;
+	BCAST_UN un;
+	size_t count = 0;
+	struct ifaddrs *ifap_head;
+	__syscall(getifaddrs(&ifap_head));
+	struct ifaddrs *ifap = ifap_head;
+	lassert(vector_init(ipv4_faces, 3)); // assume no more than 3 good ifaces by default
+	while(ifap != NULL) {
+		if(ifap->ifa_addr != NULL && ifap->ifa_addr->sa_family == AF_INET) {
+			ALOGD("iface: %s\n", ifap->ifa_name);
+			ifaddr = ((struct sockaddr_in*)ifap->ifa_addr)->sin_addr.s_addr;
+			lassert(inet_ntop(AF_INET, &ifaddr, addrstr, INET_ADDRSTRLEN));
+			ALOGD("addr: %s\t", addrstr);
+			un.v4.mask = ((struct sockaddr_in*)ifap->ifa_netmask)->sin_addr.s_addr;
+			lassert(inet_ntop(AF_INET, &(un.v4.mask), addrstr, INET_ADDRSTRLEN));
+			logprint("mask: %s\t", addrstr);
+			
+			if(ifap->ifa_flags & IFLA_BROADCAST) {
+				logprint("\t");
+
+				un.v4.bcast = ((struct sockaddr_in*)ifap->ifa_ifu.ifu_broadaddr)->sin_addr.s_addr;
+				if((ifaddr | (~(un.v4.mask))) != un.v4.bcast) {
+					logprint(ANSI_BKGRD_BRIGHT_RED ANSI_COLOR_WHITE);
+				}
+				lassert(inet_ntop(AF_INET, &un.v4.bcast, addrstr, INET_ADDRSTRLEN));
+				logprint("bcast: %s\t", addrstr);
+				logprint(ANSI_CLRST);
+
+				// add to vector
+				lassert(vector_push_back(ipv4_faces, un._vval));
+				count++;
+			}
+
+			logprint("\n");
+		}
+
+		ifap = ifap->ifa_next;
+		if(ifap == ifap_head)
+			break;
+	}
+	return count;
+}
 
 void timer_detonate(sigval_t argv) {
 	FPSTHREAD *prm = (FPSTHREAD*)(argv.sival_ptr);
@@ -105,11 +187,127 @@ int main(int argc, char **argv) {
 	/////////////////////////
 	//    ИНИЦИАЛИЗАЦИЯ    //
 	/////////////////////////
+
+	// TODO: быстрое подключение через командную строку
+
+	char buf[DGRAM_MAX];
+	// узнать все пригодные интерфейсы
+	VECTOR ifaces;
+	size_t iface_count = init_broadcast_receiver(&ifaces);
+
+	int *ubcls = (int*)malloc(sizeof(int) * ifaces.size);
+
+	int epollfd;
+	struct epoll_event ev_catch;
+	//int reuse_port = 1;
+	__syscall(epollfd = epoll_create1(0));
+	for(uint i = 0; i < iface_count; i++) {
+		struct sockaddr_in sin = {
+			  .sin_addr.s_addr = ((BCAST_UN*)(&(ifaces.array[i])))->v4.bcast
+			, .sin_port = htons(DEFAULT_PORT + 1)
+			, .sin_family = AF_INET
+		};
+		__syscall(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+		//__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
+		__syscall(bind(ubcls[i], (struct sockaddr*)&sin, sizeof(sin)));
+
+		struct epoll_event evt = {
+			  .events = EPOLLIN | EPOLLERR
+			, .data.fd = ubcls[i]
+		};
+		__syscall(epoll_ctl(epollfd, EPOLL_CTL_ADD, ubcls[i], &evt));
+	}
+
+	VECTOR servers;
+	lassert(vector_init(&servers, 10)); // TODO: get rid of magic number
+
+	struct timeval tv_last, tv_now, tv_diff;
+	__syscall(gettimeofday(&tv_last, NULL));
+	ALOGI("Scanning for servers, please wait...\n");
+	while(true) {
+		int ret;
+		__syscall(ret = epoll_wait(epollfd, &ev_catch, 1, 5000));
+		if(ret == 0) {
+			ALOGI("No broadcast from local servers\n");
+			// TODO: ask for endpoint
+			//break;
+			exit(1);
+		}
+		// ret should be = 1
+		lassert(ret == 1);
+		struct sockaddr_in srv_sin;
+		socklen_t sa_len = sizeof(srv_sin);
+
+		if(ev_catch.events & EPOLLERR) {
+			ALOGE("epoll_wait got EPOLLERR\n");
+			continue;
+		}
+
+		if(ev_catch.events & EPOLLIN) {
+			ssize_t len = recvfrom(ev_catch.data.fd, buf, DGRAM_MAX, 0
+				, (struct sockaddr*)&srv_sin, &sa_len);
+			BCSBEACON *beacon = (BCSBEACON*)buf;
+			if(beacon->magic != htobe64(BCSBEACON_MAGIC)) {
+				ALOGW("Received beacon magic %016lx != %016lx incorrect, skipping\n"
+					, beacon->magic, (uint64_t)htobe64(BCSBEACON_MAGIC));
+				continue;
+			}
+
+			if(len < (ssize_t)sizeof(BCSBEACON)) {
+				ALOGW("Received beacon length is too short, skipping\n");
+				continue;
+			}
+
+			if(len > (ssize_t)sizeof(BCSBEACON)) {
+				ALOGW("Received beacon length is too long\n");
+			}
+
+			// print server if new
+			BCAST_SRV_UN srv_new = { 
+				.endpoint = { 
+					  .addr = srv_sin.sin_addr.s_addr
+					, .port = beacon->port
+					, .zero = 0
+				}
+			};
+
+			for(size_t i = 0; i < servers.size; i++) {
+				if(servers.array[i] == srv_new._vval) {
+					// this server is already listed
+					goto next_epevent;
+				}
+			}
+
+			lassert(vector_push_back(&servers, srv_new._vval));
+			char addrstr[INET_ADDRSTRLEN];
+			lassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
+			printf("\t%s:%hu\t%.*s\n"
+				, addrstr, beacon->port, BCSBEACON_DESCRLEN, beacon->description);
+			__syscall(gettimeofday(&tv_last, NULL));
+			continue;
+		}
+next_epevent:
+		__syscall(gettimeofday(&tv_now, NULL));
+		timersub(&tv_now, &tv_last, &tv_diff);
+		if(tv_diff.tv_sec >= 5) {
+			ALOGI("No more servers detected (2)\n");
+			break;
+		}
+	}
+	ALOGI("Press Enter to continue... ");
+	getchar();
+
+	// TODO: close b/cast listeners there?
+	for(size_t i = 0; i < iface_count; i++) {
+		close(ubcls[i]);
+	}
+	free(ubcls);
+
 	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_mutex_t mutex_frame = PTHREAD_MUTEX_INITIALIZER;
 	BCSMAP map = {
-		  .width = 160
-		, .height = 80
+		  .width = 80
+		, .height = 24
 		, .map_primitives = NULL
 	};
 	srand(time(NULL));
@@ -151,7 +349,7 @@ int main(int argc, char **argv) {
 		, .sigev_value = { .sival_ptr = &prm }
 		, .sigev_signo = SIGALRM
 		, .sigev_notify_function = timer_detonate
-        , .sigev_notify_attributes = NULL
+        , .sigev_notify_attributes = 0
 	};
 	timer_t timer_id;
 	int timer_fd;
@@ -174,7 +372,6 @@ int main(int argc, char **argv) {
 		int64_t key = raw_wgetch(stdscr);
 		pthread_mutex_lock(&mutex);
 		switch(key) {
-
 			/////////////////////////
 			//       ОБРАБОТКА     //
 			/////////////////////////

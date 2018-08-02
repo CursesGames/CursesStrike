@@ -1,6 +1,6 @@
 LOCAL_OBJECTS := $(LOCAL_SOURCES:.c=.o)
 
-$(LIBDIR)$(LOCAL_MODULE): $(LOCAL_DEPENDENCIES)
+$(LIBDIR)$(LOCAL_MODULE): $(LOCAL_STATIC_DEPENDENCIES)
 $(LIBDIR)$(LOCAL_MODULE): $(LOCAL_OBJECTS)
 	cd $(OBJDIR) && ar rcs $@ $^
 	@echo -e "\e[32m AR \e[0m $(shell realpath --relative-to $(ROOTDIR) $@)"

@@ -4,7 +4,7 @@
 #include "../liblinux_util/mscfix.h"
 
 #include <stdint.h>
-#include <time.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <stdbool.h>
 
@@ -24,7 +24,8 @@ typedef struct __point {
 } __attribute__((packed)) POINT;
 
 typedef enum __bcsaction {
-	  BCSACTION_CONNECT // noparams
+	  BCSACTION_CONNECT // params: nickname: TODO
+	, BCSACTION_CONNECT2 // noparams
 	, BCSACTION_DISCONNECT // noparams
 	, BCSACTION_MOVE // params: BCSDIRECTION
 	, BCSACTION_FIRE // noparams
