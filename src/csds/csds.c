@@ -323,6 +323,16 @@ int main(int argc, char **argv) {
             __syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
             printf("coordinates were sent to client");
             delete_client(clients, addr_client);
+            
+            // Receive message-CONNECT2
+            __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
+            printf("received from client: %.*s\n", result, msg);
+
+            // Change client stat if the previous was BCSCLST_CONNECTING
+            if(clients[id].public_info.state == BCSCLST_CONNECTING){
+                clients[id].public_info.state = BCSCLST_CONNECTED;
+            }
+            
         }
     }
 
