@@ -15,21 +15,18 @@
 
 // taken from Bionicle Commander: https://github.com/Str1ker17/EltexLearning/blob/aa2fddc/src/bc/bc.c#L56
 typedef enum {
+// white-on-black default terminal scheme
 	  CPAIR_DEFAULT = 1
-	, CPAIR_PANEL
-	, CPAIR_PANEL_TITLE
-	, CPAIR_HIGHLIGHT
-	, CPAIR_EXECUTABLE
-	, CPAIR_TYPE_DIR = CPAIR_PANEL
-	, CPAIR_TYPE_REG = CPAIR_PANEL
-	, CPAIR_TYPE_SYMLINK = CPAIR_EXECUTABLE + 1
-	, CPAIR_TYPE_CHR
-	, CPAIR_TYPE_BLK
-	, CPAIR_TYPE_FIFO
-	, CPAIR_TYPE_SOCKET
+// map primitives
+	, CPAIR_CELL_BLANK = CPAIR_DEFAULT
+	, CPAIR_CELL_WALL
+	, CPAIR_CELL_CRATE
+	, CPAIR_CELL_WATER
+// players
 	, CPAIR_PLAYER_SELF
 	, CPAIR_PLAYER_FRIENDLY
 	, CPAIR_PLAYER_ENEMY
+	, CPAIR_PLAYER_NPC
 } cpair_list;
 
 typedef struct {
@@ -125,12 +122,8 @@ int main(int argc, char **argv) {
 	nassert(noecho());
 
 	nassert(start_color());
-	nassert(init_pair(CPAIR_DEFAULT, COLOR_WHITE, COLOR_BLACK)); // non-panel
-	nassert(init_pair(CPAIR_PANEL, COLOR_WHITE, COLOR_BLUE)); // panel
-	nassert(init_pair(CPAIR_PANEL_TITLE, COLOR_BLACK, COLOR_WHITE)); // panel title
-
+	nassert(init_pair(CPAIR_CELL_BLANK, COLOR_WHITE, COLOR_BLUE)); // empty cell
 	nassert(init_pair(CPAIR_PLAYER_SELF, COLOR_WHITE, COLOR_GREEN)); // me
-	nassert(init_pair(CPAIR_PLAYER_FRIENDLY, COLOR_WHITE, COLOR_GREEN)); // team
 	nassert(init_pair(CPAIR_PLAYER_ENEMY, COLOR_WHITE, COLOR_RED)); // opposite
 
 	// 2D geometry
@@ -187,7 +180,7 @@ int main(int argc, char **argv) {
 			/////////////////////////
 
 			case 0x3: // Ctrl+C
-			case KEY_F(10):
+			case KEY_F(10): // F10
 				goto loop_leave;
 
 			case KEY_LEFT: prm.me_x = max(0, prm.me_x - 1); break;
