@@ -97,6 +97,8 @@ void *broadcast (void *arg) {
             bcs[n].udp_bc_address.sin_port = htobe16(BCSSERVER_BCAST_PORT);
             bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr;
 
+            ALOGV("beacon sent to %s:%hu\n", inet_ntoa(bcs[n].udp_bc_address.sin_addr), ntohs(bcs[i].udp_bc_address.sin_port));
+
             // Configure the socket to broadcast
             setsockopt(bcs[n].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
             n++;
@@ -117,7 +119,6 @@ next_iface:
             __syscall(sendto(bcs[i].broadcast_fd,
             &(to_send), sizeof(BCSBEACON), 0, 
             (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
-            //ALOGV("beacon sent to %s:%hu\n", inet_ntoa(bcs[i].udp_bc_address.sin_addr), ntohs(bcs[i].udp_bc_address.sin_port));
         }
         sleep(1);
     }
@@ -125,17 +126,6 @@ next_iface:
     // Unreachable code
     // It will be neccessary before servers abnornal termination
     //pthread_exit (NULL);
-}
-
-// Map filling with '0' - in test version
-void create_map (BCSMAP *map) {
-    int i, j;
-
-    for (i = 0; i < map->height; i++) {
-        for (j = 0; j < map->width; j++) {
-            map->map_primitives[i * map->width + j] = 0;
-        }
-    }
 }
 
 // Player coordinates assignment
@@ -203,7 +193,7 @@ void log_print_cl_info(BCSCLIENT *clients){
     int i;
 
     for(i = 0; i < CLIENTS_NUM; i++){
-        if(&clients[i] != NULL){
+        if(clients[i].private_info.endpoint.sin_addr.s_addr != 0){
             ALOGD("CLIENT %d\n", i);
             //public info 
             ALOGD("state: %d\n", clients[i].public_info.state);
@@ -231,25 +221,18 @@ int main(int argc, char **argv) {
     BCSCLIENT *clients = malloc(sizeof(BCSCLIENT) * CLIENTS_NUM);//clients struct
     BCSMSG cl_msg;
     BCSMSGREPLY serv_msg;
-    //BCSMAP map;
+    BCSMAP map;
     void *status;
     int epfd; //event polling instance
     int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
     int result;
     int id;
-
-    // map from file
-    /*FILE *fd = NULL;
-    fopen("./somefile", "r");
-    fread(&map, sizeof(BCSMAP), 1, fd);
-    fclose(fd);*/
-
-    //create_map (&map);
-    BCSMAP map = {
-          .width = 80
-        , .height = 24
-        , .map_primitives = calloc(80 * 24, 1)
-    };
+    
+    //map loading
+    if(!bcsmap_load("propeller.bcsmap", &map)){
+        ALOGE("Could not load map from file\n");
+        exit(EXIT_FAILURE);
+    }
 
     BCSMAP map_state = {
           .width = map.width
@@ -301,7 +284,6 @@ int main(int argc, char **argv) {
             // width (2 bytes), height (2 bytes) and the pointer to primitives
             _Static_assert((sizeof(BCSMAP) - sizeof(void*) == 4), "the size of BCSMAP was changed");
             // Str1ker, 03.08.2018: proto convention
-            //__syscall(send (s_fd, &map, 4, 0));
             uint16_t tmp = htobe16(map.width);
             __syscall(send (s_fd, &tmp, 2, 0));
             tmp = htobe16(map.height);
@@ -420,9 +402,9 @@ int main(int argc, char **argv) {
                         }
                         break;
 
-                case BCSACTION_STRAFE: //UNDEFINED
-                    serv_msg.type = htobe32(BCSREPLT_NACK);
-                    break;
+                //case BCSACTION_STRAFE: //UNDEFINED
+                //    serv_msg.type = htobe32(BCSREPLT_NACK);
+                //    break;
                 
                 case BCSACTION_ROTATE: //UNDEFINED
                     serv_msg.type = htobe32(BCSREPLT_NACK);
