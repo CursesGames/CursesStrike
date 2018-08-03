@@ -43,7 +43,7 @@ before_deploy: mkdir release && cd bin && ls -1 . | zip -9o@ ../release/bcs-$CC_
 deploy:
   provider: releases
   user: Str1ker17
-  api_key: 8fe3779941ccfc968a268f7cdfa5199b91d2dc93
+  api_key: '$GITHUB_API_KEY'
   skip_cleanup: true
   file: release/bcs-$CC_ARCH.zip
   on:
