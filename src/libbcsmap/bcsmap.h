@@ -52,12 +52,12 @@ enum {
     COLOR_OPEN_SPACE = 0xFFFFFF  // white color
 };
 
-enum {
+typedef enum {
     PUNIT_ROCK = 'r',       // black color
     PUNIT_WATER = 'w',      // blue color
     PUNIT_BOX = 'b',        // brown color
     PUNIT_OPEN_SPACE = 'o'  // white color
-};
+} __attribute__((packed)) BCSMAPPRIMITIVE;
 
 // загрузить из bmp, результат конвертации в памяти
 bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map); 

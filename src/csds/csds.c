@@ -420,9 +420,9 @@ int main(int argc, char **argv) {
                         }
                         break;
 
-                case BCSACTION_STRAFE: //UNDEFINED
-                    serv_msg.type = htobe32(BCSREPLT_NACK);
-                    break;
+                //case BCSACTION_STRAFE: //UNDEFINED
+                //    serv_msg.type = htobe32(BCSREPLT_NACK);
+                //    break;
                 
                 case BCSACTION_ROTATE: //UNDEFINED
                     serv_msg.type = htobe32(BCSREPLT_NACK);

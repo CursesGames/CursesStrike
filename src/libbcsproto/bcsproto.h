@@ -50,12 +50,13 @@ typedef enum __bcsaction {
 	  BCSACTION_CONNECT // params: nickname: TODO
 	, BCSACTION_CONNECT2 // noparams
 	, BCSACTION_DISCONNECT // noparams
-	, BCSACTION_MOVE // params: BCSDIRECTION
-	, BCSACTION_FIRE // noparams
 // move without rotation
-	, BCSACTION_STRAFE // params: BCSDIRECTION
-// rotation without move
-	, BCSACTION_ROTATE // params: BCSDIRECTION
+	, BCSACTION_MOVE // params: BCSDIRECTION
+// fire to the current direction
+	, BCSACTION_FIRE // noparams
+//	, BCSACTION_STRAFE // params: BCSDIRECTION
+// rotate around without move
+	, BCSACTION_ROTATE // params: BCSDIRECTION (только LEFT или RIGHT)
 // request statistics
 	, BCSACTION_REQSTATS // noparams
 } BCSACTION;
@@ -122,6 +123,15 @@ typedef struct {
 	BCSCLIENT_PRIVATE private_info;
 } BCSCLIENT;
 
+typedef union {
+	int64_t long_p;
+	struct {
+		int32_t int_lo;
+		int32_t int_hi;
+	} ints;
+	uint8_t bytes[8]; // 
+} BCSMSGPARAM;
+
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
 // TODO: номер может переполниться, добавить обработку такой ситуации
@@ -130,14 +140,7 @@ typedef struct __bcsmsg {
 // accurate to microseconds
 	struct timeval time_gen;
 // additional params - 8 bytes
-	union {
-		int64_t long_p;
-		struct {
-			int32_t int_lo; //main parameter
-			int32_t int_hi;
-		} ints;
-		uint8_t bytes[8]; // 
-	} un;
+	BCSMSGPARAM un;
 } BCSMSG;
 
 // базовая часть сообщения сервера
@@ -180,3 +183,8 @@ extern ssize_t sendto2(
 	int fd, const void *buf, size_t n,
 	int flags, struct sockaddr *addr, socklen_t addr_len
 );
+
+// read EXACTLY n bytes from TCP connection
+// or return -1 if it's impossible.
+// In this condition, actual read count is returned into n
+//extern ssize_t recv4(int fd, void *buf, size_t *n, int flags);

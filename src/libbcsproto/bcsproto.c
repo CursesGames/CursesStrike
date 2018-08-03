@@ -29,3 +29,12 @@ ssize_t sendto2(
 	__syscall(ioctl(fd, FIONBIO, &nb_no, sizeof(nb_no)));
 	return sendto(fd, buf, n, flags, addr, addr_len);
 }
+
+/*extern ssize_t recv4(int fd, void *buf, size_t *n, int flags) {
+	size_t req_n = *n;
+	char *ptr = (char*)buf;
+	while(true) {
+		ssize_t rcvd = recv(fd, ptr, req_n, flags);
+		if(rcvd == -1)
+	}
+}*/
