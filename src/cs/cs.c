@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
+#include <locale.h>
 #include <ncursesw/ncurses.h>
 
 #include <unistd.h>
@@ -145,6 +146,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 }
 
 void timer_detonate(sigval_t argv) {
+	return;
 	FPSTHREAD *prm = (FPSTHREAD*)(argv.sival_ptr);
 	pthread_mutex_lock(prm->mutex_data);
 	++(prm->ticks);
@@ -209,6 +211,7 @@ void *receiver_func(void *argv) {
 
 	}
 
+	// ReSharper disable once CppUnreachableCode
 	return NULL;
 }
 
@@ -224,35 +227,47 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
 	WINDOW *pad = *pad_ptr;
 	uint8_t *ptr = map->map_primitives;
 	nassert(werase(pad));
+
+	//FILE *f = fopen("mapdump.txt", "w");
+
 	for(size_t i = 0; i < map->height; i++) {
-		for(size_t j = 0; j < map->height; j++) {
+		for(size_t j = 0; j < map->width; j++) {
+			//char c = '\0';
 			switch((BCSMAPPRIMITIVE)*ptr) {
 				case PUNIT_OPEN_SPACE:
 					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
-					nassert(mvwaddch(pad, i, j, ' '));
+					nassert(mvwinsch(pad, i, j, ' '));
 					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
+					//c = ' ';
 				break; // empty cell
 
 				case PUNIT_ROCK:
 					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
-					nassert(mvwaddch(pad, i, j, '#'));
+					nassert(mvwinsch(pad, i, j, '#'));
 					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
+					//c = '#';
 				break;
 
 				case PUNIT_BOX:
 					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_CRATE)));
-					nassert(mvwaddch(pad, i, j, 'X'));
+					nassert(mvwinsch(pad, i, j, 'X'));
 					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_CRATE)));
+					//c = 'X';
 				break;
 
 				case PUNIT_WATER:
-					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
-					nassert(mvwaddch(pad, i, j, '~'));
-					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
+					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WATER)));
+					nassert(mvwinsch(pad, i, j, '~'));
+					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WATER)));
+					//c = '~';
 				break;
 			}
+			//fputc(c, f);
+			++ptr;
 		}
+		//fputc('\n', f);
 	}
+	//fclose(f);
 }
 
 void draw_map(WINDOW *pad, BCSMAP *map) {
@@ -289,34 +304,13 @@ void do_action(BCSACTION action, BCSDIRECTION dir) {
 
 void draw_window(FPSTHREAD *prm) {
 	pthread_mutex_lock(prm->mutex_frame);
-	if(stdscr->_clear) {
+    
+    int w, h;
+	getmaxyx(stdscr, h, w);
+	
+    if(stdscr->_clear) {
 		stdscr->_clear = false;
 		nassert(werase(stdscr));
-
-		if (prm->map->map_primitives != NULL) {
-			// copy a part of pad
-			// первые два параметра - верхний левый угол pad, с которого берём
-			// следующие четыре - куда на экран проецируем
-			int w, h;
-			getmaxyx(stdscr, h, w);
-			nassert(pnoutrefresh(prm->mappad, 0, 0, 0, 0, 0 + h, 0 + w));
-		}
-		else {
-			// do not check return value because text may be longer than window width
-			mvwaddstr(stdscr, 0, 0, "The game is on");
-			pthread_mutex_lock(prm->mutex_data);
-			prm->delay_val = (prm->ticks / 15) % 6;
-			pthread_mutex_unlock(prm->mutex_data);
-			for(int i = 0; i < prm->delay_val; i++) {
-				waddch(stdscr, '.');
-			}
-		}
-
-		// draw player
-		nassert(wmove(stdscr, prm->state_public->position.y, prm->state_public->position.x));
-		wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-		waddch(stdscr, dirchar[prm->state_public->direction]);
-		wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	}
 
 	if(prm->below->_clear) {
@@ -328,8 +322,23 @@ void draw_window(FPSTHREAD *prm) {
 	}
 
 	nassert(wnoutrefresh(stdscr));
+	// copy a part of pad
+	// первые два параметра - верхний левый угол pad, с которого берём
+	// следующие четыре - куда на экран проецируем
+    nassert(pnoutrefresh(prm->mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+
+	// draw player
+	nassert(wmove(stdscr, prm->state_public->position.y, prm->state_public->position.x));
+	wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+	winsch(stdscr, dirchar[prm->state_public->direction]);
+	wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+	nassert(wnoutrefresh(stdscr));
+
+	// эта панелька наложится поверх карты
 	nassert(wnoutrefresh(prm->below));
+	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
+	// отрисовали и хватит
 	pthread_mutex_unlock(prm->mutex_frame);
 }
 
@@ -340,6 +349,7 @@ int main(int argc, char **argv) {
 
 	// TODO: быстрое подключение через командную строку
 	verbose = true;
+	setlocale(LC_ALL, "");
 
 	char buf[BCSDGRAM_MAX];
 	char addrstr[INET_ADDRSTRLEN];
@@ -586,9 +596,14 @@ next_epevent:
 	nassert(keypad(stdscr, true));
 	nassert(curs_set(false));
 	nassert(noecho());
+	//nassert(use_default_colors()); // for transparency?
 
 	nassert(start_color());
 	nassert(init_pair(CPAIR_CELL_BLANK, COLOR_WHITE, COLOR_BLACK)); // empty cell
+	nassert(init_pair(CPAIR_CELL_WALL, COLOR_BLACK, COLOR_WHITE)); // wall
+	nassert(init_pair(CPAIR_CELL_CRATE, COLOR_BLACK, COLOR_YELLOW)); // crate
+	nassert(init_pair(CPAIR_CELL_WATER, COLOR_WHITE, COLOR_BLUE)); // wall
+
 	nassert(init_pair(CPAIR_PLAYER_SELF, COLOR_WHITE, COLOR_GREEN)); // me
 	nassert(init_pair(CPAIR_PLAYER_ENEMY, COLOR_WHITE, COLOR_RED)); // opposite
 
@@ -599,12 +614,14 @@ next_epevent:
 	WINDOW *below;
 	nassert(below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
 	nassert(wbkgd(below, COLOR_PAIR(CPAIR_DEFAULT)));
+	below->_clear = true;
 
 	BCSCLIENT_PUBLIC stpb = {
 		  .direction = BCSDIR_UP
 		, .position = { .x = 0, .y = 0 }
 		, .state = BCSCLST_CONNECTED
 	};
+
 	FPSTHREAD prm = {
 		  .map = &map
 		, .mutex_data = &mutex
@@ -645,7 +662,7 @@ next_epevent:
 		//         ВВОД        //
 		/////////////////////////
 		int64_t key = raw_wgetch(stdscr);
-		pthread_mutex_lock(&mutex);
+		//pthread_mutex_lock(&mutex);
 		switch(key) {
 			/////////////////////////
 			//       ОБРАБОТКА     //
@@ -663,7 +680,10 @@ next_epevent:
 
 			default: break;
 		}
-		pthread_mutex_unlock(&mutex);
+		//pthread_mutex_unlock(&mutex);
+		++prm.ticks;
+		below->_clear = true;
+		stdscr->_clear = true;
 	}
 
 loop_leave:
