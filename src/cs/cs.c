@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
+#include <locale.h>
 #include <ncursesw/ncurses.h>
 
 #include <unistd.h>
@@ -46,16 +47,14 @@ typedef enum {
 	, CPAIR_PLAYER_NPC
 } cpair_list;
 
-typedef struct {
-	pthread_mutex_t *mutex_data;
-	pthread_mutex_t *mutex_frame;
-	BCSMAP *map;
-	WINDOW *below;
-	size_t ticks;
-	int32_t delay_val;
-	int16_t me_x;
-	int16_t me_y;
-} FPSTHREAD;
+// look at bcsproto.h:
+//typedef enum __bcsdir {
+//	  BCSDIR_LEFT
+//	, BCSDIR_RIGHT
+//	, BCSDIR_UP
+//	, BCSDIR_DOWN
+//} BCSDIRECTION;
+const char dirchar[] = { '<', '>', '^', 'v' };
 
 typedef union __bcast_un {
 	struct {
@@ -76,12 +75,31 @@ typedef union __bcast_srv_ep {
 
 typedef BCSBEACON BCAST_SRV;
 
+typedef struct {
+	pthread_mutex_t *mutex_data;
+	pthread_mutex_t *mutex_frame;
+	pthread_mutex_t *mutex_sock;
+	BCSMAP *map;
+	WINDOW *mappad;
+	BCSCLIENT_PUBLIC *state_public;
+	WINDOW *below;
+	size_t ticks;
+	int32_t delay_val;
+} FPSTHREAD;
+
+typedef struct {
+	pthread_mutex_t *mutex_sock;
+	BCSCLIENT_PUBLIC *state_public;
+	struct __endpoint server_endpoint;
+	int sockfd;
+} RCVTHREAD;
+
 void draw_window(FPSTHREAD *prm);
 
-// WARNING: this is a workaround for dump C libraries like musl
+// WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
 
-// Создаёт вектор интерфейсов. Вектор может быть неинициализированным
+// Создаёт вектор интерфейсов. Вектор должен быть неинициализированным
 size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 	char addrstr[INET_ADDRSTRLEN];
 	in_addr_t ifaddr;
@@ -128,6 +146,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 }
 
 void timer_detonate(sigval_t argv) {
+	return;
 	FPSTHREAD *prm = (FPSTHREAD*)(argv.sival_ptr);
 	pthread_mutex_lock(prm->mutex_data);
 	++(prm->ticks);
@@ -139,34 +158,159 @@ void timer_detonate(sigval_t argv) {
 	//return NULL;
 }
 
-void draw_map(WINDOW *wnd, BCSMAP *map) {
+void *receiver_func(void *argv) {
+	RCVTHREAD *prm = (RCVTHREAD*)argv;
+	int sock = prm->sockfd;
+	struct __endpoint server = prm->server_endpoint;
+	struct sockaddr_in src;
+	socklen_t sa_len = sizeof(src);
+	char buf[BCSDGRAM_MAX];
+
+	while(true) {
+		ssize_t rcvd;
+		__syscall(rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (struct sockaddr*)&src, &sa_len));
+		if(src.sin_addr.s_addr != server.addr || src.sin_port != server.port) {
+			ALOGD("Wrong datagram source: %s:%hu != %s:%hu\n"
+				, inet_ntoa(src.sin_addr), be16toh(src.sin_port)
+				, inet_ntoa(*(struct in_addr*)&(server.addr)), be16toh(server.port)
+			);
+			continue;
+		}
+
+		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
+		switch(be32toh(repl->type)) {
+			case BCSREPLT_ANNOUNCE:
+				ALOGI("Received announce\n");
+			break;
+
+			case BCSREPLT_EMERGENCY:
+				ALOGW("Received emergency message\n");
+			break;
+
+			case BCSREPLT_ACK:
+				// everything is OK
+			break;
+
+			case BCSREPLT_NACK:
+				// something's wrong
+				ALOGW("Received NACK, action cancelled\n");
+			break;
+
+			case BCSREPLT_MAP:
+				ALOGI("Received map change event\n");
+			break;
+
+			case BCSREPLT_STATS:
+			break;
+
+			case BCSREPLT_NONE: 
+			default:
+				ALOGW("Server sent message of type = %u, do nothing\n", be32toh(repl->type));
+			break;
+		}
+
+	}
+
+	// ReSharper disable once CppUnreachableCode
+	return NULL;
+}
+
+void init_map(WINDOW **pad_ptr, BCSMAP *map) {
+	if (*pad_ptr != NULL) {
+		// resize
+		nassert(wresize(*pad_ptr, map->height, map->width));
+	}
+	else {
+		nassert(*pad_ptr = newpad(map->height, map->width));
+	}
+	// можно здесь же и отрисовать, это же pad
+	WINDOW *pad = *pad_ptr;
+	uint8_t *ptr = map->map_primitives;
+	nassert(werase(pad));
+
+	//FILE *f = fopen("mapdump.txt", "w");
+
+	for(size_t i = 0; i < map->height; i++) {
+		for(size_t j = 0; j < map->width; j++) {
+			//char c = '\0';
+			switch((BCSMAPPRIMITIVE)*ptr) {
+				case PUNIT_OPEN_SPACE:
+					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
+					nassert(mvwinsch(pad, i, j, ' '));
+					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
+					//c = ' ';
+				break; // empty cell
+
+				case PUNIT_ROCK:
+					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
+					nassert(mvwinsch(pad, i, j, '#'));
+					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
+					//c = '#';
+				break;
+
+				case PUNIT_BOX:
+					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_CRATE)));
+					nassert(mvwinsch(pad, i, j, 'X'));
+					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_CRATE)));
+					//c = 'X';
+				break;
+
+				case PUNIT_WATER:
+					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WATER)));
+					nassert(mvwinsch(pad, i, j, '~'));
+					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WATER)));
+					//c = '~';
+				break;
+			}
+			//fputc(c, f);
+			++ptr;
+		}
+		//fputc('\n', f);
+	}
+	//fclose(f);
+}
+
+void draw_map(WINDOW *pad, BCSMAP *map) {
 	
+}
+
+void do_action(BCSACTION action, BCSDIRECTION dir) {
+	BCSMSG msg = {
+		  .action = htobe32(action)
+		, .un.long_p = 0
+	};
+
+	switch(action) {
+		case BCSACTION_DISCONNECT: break;
+		case BCSACTION_MOVE: msg.un.ints.int_lo = dir; break;
+		case BCSACTION_FIRE: break;
+		case BCSACTION_ROTATE: {
+			switch(dir) {
+				case BCSDIR_LEFT:
+				case BCSDIR_RIGHT:
+					msg.un.ints.int_lo = dir;
+				break;
+
+				default: ALOGW("Wrong direction for rotation: %u\n", dir); return;
+			}
+		} break;
+		case BCSACTION_REQSTATS: break;
+
+		default: ALOGW("Wrong action type %u\n", action); return;
+	}
+
+	// TODO: sendto()
 }
 
 void draw_window(FPSTHREAD *prm) {
 	pthread_mutex_lock(prm->mutex_frame);
-	if(stdscr->_clear) {
+    
+    int w, h;
+	getmaxyx(stdscr, h, w);
+	
+    if(stdscr->_clear) {
 		stdscr->_clear = false;
 		nassert(werase(stdscr));
-		if (prm->map->map_primitives != NULL) {
-			draw_map(stdscr, prm->map);
-		}
-		else {
-			// do not check return value because text may be longer than window width
-			mvwaddstr(stdscr, 0, 0, "The game is on");
-			pthread_mutex_lock(prm->mutex_data);
-			prm->delay_val = (prm->ticks / 15) % 6;
-			pthread_mutex_unlock(prm->mutex_data);
-			for(int i = 0; i < prm->delay_val; i++) {
-				waddch(stdscr, '.');
-			}
-		}
-
-		// draw player
-		nassert(wmove(stdscr, prm->me_y, prm->me_x));
-		wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-		waddch(stdscr, ' ');
-		wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	}
 
 	if(prm->below->_clear) {
@@ -178,8 +322,23 @@ void draw_window(FPSTHREAD *prm) {
 	}
 
 	nassert(wnoutrefresh(stdscr));
+	// copy a part of pad
+	// первые два параметра - верхний левый угол pad, с которого берём
+	// следующие четыре - куда на экран проецируем
+    nassert(pnoutrefresh(prm->mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+
+	// draw player
+	nassert(wmove(stdscr, prm->state_public->position.y, prm->state_public->position.x));
+	wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+	winsch(stdscr, dirchar[prm->state_public->direction]);
+	wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+	nassert(wnoutrefresh(stdscr));
+
+	// эта панелька наложится поверх карты
 	nassert(wnoutrefresh(prm->below));
+	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
+	// отрисовали и хватит
 	pthread_mutex_unlock(prm->mutex_frame);
 }
 
@@ -190,16 +349,17 @@ int main(int argc, char **argv) {
 
 	// TODO: быстрое подключение через командную строку
 	verbose = true;
+	setlocale(LC_ALL, "");
 
 	char buf[BCSDGRAM_MAX];
 	char addrstr[INET_ADDRSTRLEN];
 	// узнать все пригодные интерфейсы
 	VECTOR ifaces;
-	size_t iface_count;
 
 	int epollfd;
 	struct epoll_event ev_catch;
 	int reuse_port = 1;
+	size_t iface_count;
 
 start_bcast_scan:	
 	iface_count = init_broadcast_receiver(&ifaces);
@@ -405,20 +565,20 @@ next_epevent:
 		.map_primitives = NULL
 	};
 	VERBOSE ALOGV("Receiving map params... ");
-	sysassert(recv(sock_tcp, &map, 4, 0) == 4); // FIXME: magic const 4 is a sizeof (w+h)
+	__syscall(recv(sock_tcp, &map, 4, MSG_WAITALL)); // FIXME: magic const 4 is a sizeof (w+h)
 	map.width = be16toh(map.width);
 	map.height = be16toh(map.height);
 	VERBOSE logprint("%hux%hu\n", map.width, map.height);
 
 	ssize_t size_in_bytes = map.width * map.height;
-	map.map_primitives = malloc(size_in_bytes);
+	map.map_primitives = (uint8_t*)malloc(size_in_bytes);
 	VERBOSE ALOGV("Receiving map data... ");
-	sysassert(recv(sock_tcp, &map.map_primitives, size_in_bytes, 0) == size_in_bytes);
+	__syscall(recv(sock_tcp, map.map_primitives, size_in_bytes, MSG_WAITALL));
 	VERBOSE logprint("%lu bytes OK.\n", size_in_bytes);
 
 	close(sock_tcp);
 
-	msg.action = BCSACTION_CONNECT2;
+	msg.action = htobe32(BCSACTION_CONNECT2);
 	bcsproto_new_packet(&msg);
 	VERBOSE ALOGV("Sending CONNECT2... ");
 	sysassert(sendto(sock, &msg, sizeof(msg), 0, (struct sockaddr*)&sin, sizeof(sin)) == sizeof(msg));
@@ -436,9 +596,14 @@ next_epevent:
 	nassert(keypad(stdscr, true));
 	nassert(curs_set(false));
 	nassert(noecho());
+	//nassert(use_default_colors()); // for transparency?
 
 	nassert(start_color());
 	nassert(init_pair(CPAIR_CELL_BLANK, COLOR_WHITE, COLOR_BLACK)); // empty cell
+	nassert(init_pair(CPAIR_CELL_WALL, COLOR_BLACK, COLOR_WHITE)); // wall
+	nassert(init_pair(CPAIR_CELL_CRATE, COLOR_BLACK, COLOR_YELLOW)); // crate
+	nassert(init_pair(CPAIR_CELL_WATER, COLOR_WHITE, COLOR_BLUE)); // wall
+
 	nassert(init_pair(CPAIR_PLAYER_SELF, COLOR_WHITE, COLOR_GREEN)); // me
 	nassert(init_pair(CPAIR_PLAYER_ENEMY, COLOR_WHITE, COLOR_RED)); // opposite
 
@@ -449,6 +614,13 @@ next_epevent:
 	WINDOW *below;
 	nassert(below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
 	nassert(wbkgd(below, COLOR_PAIR(CPAIR_DEFAULT)));
+	below->_clear = true;
+
+	BCSCLIENT_PUBLIC stpb = {
+		  .direction = BCSDIR_UP
+		, .position = { .x = 0, .y = 0 }
+		, .state = BCSCLST_CONNECTED
+	};
 
 	FPSTHREAD prm = {
 		  .map = &map
@@ -457,9 +629,11 @@ next_epevent:
 		, .ticks = 0
 		, .delay_val = 0
 		, .below = below
-		, .me_x = 42 + rand() % 16
-		, .me_y = 14 + rand() % 10
+		, .mappad = NULL
+		, .state_public = &stpb
 	};
+
+	init_map(&prm.mappad, &map);
 
 	// запуск таймера
 	struct sigevent sgv = {
@@ -488,7 +662,7 @@ next_epevent:
 		//         ВВОД        //
 		/////////////////////////
 		int64_t key = raw_wgetch(stdscr);
-		pthread_mutex_lock(&mutex);
+		//pthread_mutex_lock(&mutex);
 		switch(key) {
 			/////////////////////////
 			//       ОБРАБОТКА     //
@@ -498,15 +672,18 @@ next_epevent:
 			case KEY_F(10): // F10
 				goto loop_leave;
 
-			case KEY_LEFT: prm.me_x = max(0, prm.me_x - 1); break;
-			case KEY_RIGHT: prm.me_x = min(wnd_xmax - 1, prm.me_x + 1); break;
+			case KEY_LEFT: break;
+			case KEY_RIGHT: break;
 
-			case KEY_UP: prm.me_y = max(0, prm.me_y - 1); break;
-			case KEY_DOWN: prm.me_y = min(wnd_ymax - 1, prm.me_y + 1); break;
+			case KEY_UP: break;
+			case KEY_DOWN: break;
 
 			default: break;
 		}
-		pthread_mutex_unlock(&mutex);
+		//pthread_mutex_unlock(&mutex);
+		++prm.ticks;
+		below->_clear = true;
+		stdscr->_clear = true;
 	}
 
 loop_leave:
