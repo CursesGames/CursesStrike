@@ -133,7 +133,7 @@ typedef struct __bcsmsg {
 	union {
 		int64_t long_p;
 		struct {
-			int32_t int_lo;
+			int32_t int_lo; //main parameter
 			int32_t int_hi;
 		} ints;
 		uint8_t bytes[8]; // 

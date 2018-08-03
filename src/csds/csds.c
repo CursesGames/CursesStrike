@@ -117,7 +117,7 @@ next_iface:
             __syscall(sendto(bcs[i].broadcast_fd,
             &(to_send), sizeof(BCSBEACON), 0, 
             (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
-            ALOGV("beacon sent to %s:%hu\n", inet_ntoa(bcs[i].udp_bc_address.sin_addr), ntohs(bcs[i].udp_bc_address.sin_port));
+            //ALOGV("beacon sent to %s:%hu\n", inet_ntoa(bcs[i].udp_bc_address.sin_addr), ntohs(bcs[i].udp_bc_address.sin_port));
         }
         sleep(1);
     }
@@ -184,11 +184,11 @@ int search_client(BCSCLIENT *clients, struct sockaddr_in addr_client) {
             (clients[i].private_info.endpoint.sin_port == addr_client.sin_port) && 
             (clients[i].private_info.endpoint.sin_family == addr_client.sin_family)) {
             num = i;
-            break;
+            return num;
         }
     }
 
-    return num;
+    return -1;
 }
 
 // Remove client from array
@@ -199,22 +199,21 @@ void delete_client (BCSCLIENT *clients, struct sockaddr_in addr_client) {
     memset(clients + num*sizeof(BCSCLIENT), 0, sizeof(BCSCLIENT));
 }
 
-void log_print(BCSCLIENT *clients){
+void log_print_cl_info(BCSCLIENT *clients){
     int i;
 
     for(i = 0; i < CLIENTS_NUM; i++){
         if(&clients[i] != NULL){
             ALOGD("CLIENT %d\n", i);
             //public info 
-            ALOGD("state: %d\n", clients[i].public_info.state); //state - print %d ?
+            ALOGD("state: %d\n", clients[i].public_info.state);
             ALOGD("position: x = %u, y = %u\n", (unsigned int)clients[i].public_info.position.x, (unsigned int)clients[i].public_info.position.y);
-            ALOGI("direction: %d\n", clients[i].public_info.direction); //direction %d ?
+            ALOGI("direction: %d\n", clients[i].public_info.direction);
             //public ext info
             ALOGI("frags: %u\n", (unsigned int)(clients[i].public_ext_info.frags));
             ALOGI("deaths: %u\n", (unsigned int)(clients[i].public_ext_info.deaths));
             ALOGI("deaths: %s\n", clients[i].public_ext_info.nickname);
             //private info
-            //must be sin_addr.s_addr but is sin_addr
             ALOGI("endpoint : family = %d, port = %d, address = %s\n", clients[i].private_info.endpoint.sin_family, clients[i].private_info.endpoint.sin_port, inet_ntoa(clients[i].private_info.endpoint.sin_addr));
             ALOGI("last fire time: %ld.%06ld\n", clients[i].private_info.time_last_fire.tv_sec, clients[i].private_info.time_last_fire.tv_usec);
             ALOGI("last dgram time: %ld.%06ld\n", clients[i].private_info.time_last_dgram.tv_sec, clients[i].private_info.time_last_dgram.tv_usec);
@@ -232,11 +231,18 @@ int main(int argc, char **argv) {
     BCSCLIENT *clients = malloc(sizeof(BCSCLIENT) * CLIENTS_NUM);//clients struct
     BCSMSG cl_msg;
     BCSMSGREPLY serv_msg;
+    //BCSMAP map;
     void *status;
     int epfd; //event polling instance
     int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
     int result;
     int id;
+
+    // map from file
+    /*FILE *fd = NULL;
+    fopen("./somefile", "r");
+    fread(&map, sizeof(BCSMAP), 1, fd);
+    fclose(fd);*/
 
     //create_map (&map);
     BCSMAP map = {
@@ -307,55 +313,129 @@ int main(int argc, char **argv) {
             close(s_fd);
         }
 
-
         // Receive message from client by udp, add client data to array
         // and send him his initial coordinates
-        if (event.data.fd == u_fd) { //check event
-            // Receive message-CONNECT from client 
+        if(event.data.fd == u_fd){ //check event
             __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-            // Str1ker, 03.08.2018: ignore beacon packets
-            if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
-                continue;
+            // why the client may be denied
+            id = search_client(clients, addr_client);
+            serv_msg.packet_no = cl_msg.packet_no; // packet to send number
 
-            printf("received CONNECT from client\n");
+            switch(be32toh(cl_msg.action)){
+                case BCSACTION_CONNECT: // client sent CONNECT
+                    // Ignore beacon packets
+                    if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
+                        continue;
+                    printf("received CONNECT from client\n");
+                    // Add client to array
+                    switch(add_client(&map, clients, addr_client)){
+                        case -1: // clients limit is settled
+                            serv_msg.type = htobe32(BCSREPLT_NACK);
+                            break;
 
-            // Add client to array
-            if((id = add_client(&map, clients, addr_client)) == -1) {
-                // Set initial message parameters
-                serv_msg.packet_no = cl_msg.packet_no;
-                serv_msg.type = htobe32(BCSREPLT_NACK);
-                // Send message-MAP to client
-                __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
-                continue;
+                        default:
+                            clients[id].public_info.state = BCSCLST_CONNECTING; //client state to CONNECTING
+                            serv_msg.type = htobe32(BCSREPLT_MAP);
+                            log_print_cl_info(clients);
+                    }
+                    break;
+                    
+                case BCSACTION_CONNECT2: // client sent CONNECT2
+                    printf("received CONNECT2 from client\n");
+                    // Change client stat if the previous was BCSCLST_CONNECTING
+                    if(clients[id].public_info.state == BCSCLST_CONNECTING){
+                        clients[id].public_info.state = BCSCLST_CONNECTED;
+                        serv_msg.type = htobe32(BCSREPLT_ACK);
+                    }
+                    else{
+                        //error
+                        clients[id].public_info.state = BCSCLST_UNDEF;
+                        serv_msg.type = htobe32(BCSREPLT_NACK);
+                    }
+                    break;
+                        
+                case BCSACTION_DISCONNECT:
+                    delete_client(clients, addr_client);
+                    serv_msg.type = htobe32(BCSREPLT_ACK);
+                    break;
+
+                case BCSACTION_MOVE:
+                    switch(be32toh(cl_msg.un.ints.int_lo)){
+                        case BCSDIR_LEFT:
+                            if((clients[id].public_info.position.x - 1) == 0){
+                                serv_msg.type = htobe32(BCSREPLT_NACK);
+                            }
+                            else{
+                                clients[id].public_info.position.x--;
+                                serv_msg.type = htobe32(BCSREPLT_ACK);
+                            }
+                            break;
+                                
+                        case BCSDIR_RIGHT:
+                            if((clients[id].public_info.position.x + 1) == map.width){
+                                serv_msg.type = htobe32(BCSREPLT_NACK);
+                            }
+                            else{
+                                clients[id].public_info.position.x++;
+                                serv_msg.type = htobe32(BCSREPLT_ACK);
+                            }
+                            break;
+
+                        case BCSDIR_UP:
+                            if((clients[id].public_info.position.y - 1) == 0){
+                                serv_msg.type = htobe32(BCSREPLT_NACK);
+                            }
+                            else{
+                                clients[id].public_info.position.y--;
+                                serv_msg.type = htobe32(BCSREPLT_ACK);
+                            }
+                            break;
+
+                        case BCSDIR_DOWN:
+                            if((clients[id].public_info.position.y + 1) == map.height){
+                                serv_msg.type = htobe32(BCSREPLT_NACK);
+                            }
+                            else{
+                                clients[id].public_info.position.y++;
+                                serv_msg.type = htobe32(BCSREPLT_ACK);
+                            }
+
+                            default:
+                                serv_msg.type = htobe32(BCSREPLT_NACK);
+                        }        
+                        break;
+                        
+                case BCSACTION_FIRE:
+                    switch(clients[id].public_info.state){
+                        case BCSCLST_CONNECTED:
+                            clients[id].public_info.state = BCSCLST_PLAYING;
+                            serv_msg.type = htobe32(BCSREPLT_ACK);
+                            break;
+
+                        case BCSCLST_PLAYING: //UNDEFINED
+                            break;
+
+                        default: //nothing -> error
+                            serv_msg.type = htobe32(BCSREPLT_NACK);
+                        }
+                        break;
+
+                case BCSACTION_STRAFE: //UNDEFINED
+                    serv_msg.type = htobe32(BCSREPLT_NACK);
+                    break;
+                
+                case BCSACTION_ROTATE: //UNDEFINED
+                    serv_msg.type = htobe32(BCSREPLT_NACK);
+                    break;
+
+                case BCSACTION_REQSTATS: //UNDEFINED
+                    serv_msg.type = htobe32(BCSREPLT_NACK);
+                    break;
+
+                default:
+                    serv_msg.type = htobe32(BCSREPLT_NACK);
             }
-            else { // client limit is settled
-                // Set initial message parameters
-                serv_msg.packet_no = cl_msg.packet_no;
-                serv_msg.type = htobe32(BCSREPLT_MAP);
-                // Send message-NACK to client
-                __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
-
-            }
-
-            // Send coordinates to client
-            /*__syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
-            printf("coordinates were sent to client\n");
-            delete_client(clients, addr_client);*/
-
-            // Str1ker, 03.08.2018: вернул на место коммит 668e0ba604247ef0e8e34f45b138b620cdd3324f
-            // Receive message-CONNECT2
-            __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-            printf("received CONNECT2 from client\n");
-            // Change client stat if the previous was BCSCLST_CONNECTING
-            if(clients[id].public_info.state == BCSCLST_CONNECTING){
-                clients[id].public_info.state = BCSCLST_CONNECTED;
-            }
-            // Set initial message parameters
-            serv_msg.packet_no = cl_msg.packet_no;
-            serv_msg.type = htobe32(BCSREPLT_ACK);
-            // Send message-ACK to client
             __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
-
         }
     }
 
@@ -373,27 +453,3 @@ int main(int argc, char **argv) {
     return(EXIT_SUCCESS);
 }
 
-
-/*
-__syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-swich(be32toh(cl_msg.action)){
-    case: BCSACTION_CONNECT // params: nickname: TODO
-        break;
-    case: BCSACTION_CONNECT2 // noparams
-        break;
-    case: BCSACTION_DISCONNECT // noparams
-        break;
-    case: BCSACTION_MOVE // params: BCSDIRECTION
-        break;
-    case: BCSACTION_FIRE // noparams
-        break;
-    case: BCSACTION_STRAFE // params: BCSDIRECTION
-        break;
-    case: BCSACTION_ROTATE // params: BCSDIRECTION
-        break;
-    case: BCSACTION_REQSTATS // noparams
-        break;
-}
-
-
-*/
