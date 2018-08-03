@@ -3,8 +3,13 @@
 ROOTDIR := $(CURDIR)
 include $(ROOTDIR)/src-build/default-config.mk
 
+# WARNING!
+# If you want to move to another architecture, you might have to recompile ncurses from sources!
 # cross-compiler
+ifeq ($(strip $(CROSS_COMPILE)),)
 CROSS_COMPILE := /home/striker/bin/cross-compile/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-gcc
+endif
+
 override CC := $(CROSS_COMPILE)
 # whole solution flags
 CFLAGS := -Wno-unused-parameter -ansi -Wextra -pedantic

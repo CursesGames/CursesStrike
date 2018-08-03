@@ -6,7 +6,10 @@ include $(ROOTDIR)/src-build/default-config.mk
 # WARNING!
 # If you want to move to another architecture, you might have to recompile ncurses from sources!
 # cross-compiler
+ifeq ($(strip $(CROSS_COMPILE)),)
 CROSS_COMPILE := /home/striker/bin/cross-compile/toolchain-mips_24kc_gcc-5.4.0_musl-1.1.16/bin/mips-openwrt-linux-gcc
+endif
+
 override CC := $(CROSS_COMPILE)
 # whole solution flags
 CFLAGS := -Wno-unused-parameter -ansi -Wextra -pedantic
