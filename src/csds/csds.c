@@ -41,9 +41,9 @@ int udp_bind(struct sockaddr_in *addr_udp, socklen_t addr_size) {
     addr_udp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
     addr_udp->sin_addr.s_addr = INADDR_ANY;
 
-	// Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
-	int reuse_addr = 1;
-	__syscall(setsockopt(u_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
+    // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
+    int reuse_addr = 1;
+    __syscall(setsockopt(u_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
     __syscall(bind(u_fd, (struct sockaddr *)addr_udp, addr_size));
@@ -155,12 +155,12 @@ void init_start_xy (BCSMAP *map, uint16_t start_x, uint16_t start_y) {
 }
 
 // Put client data into array
-int add_client (BCSMAP *map, BCSCLIENT *clients, struct sockaddr_in addr_client) {
+int add_client (BCSMAP *map, BCSCLIENT *clients, struct sockaddr_in addr_client){
     struct timeval tv;
     int i;
 
-    for (i = 0; i < CLIENTS_NUM; i++) {
-        if (&clients[i] == NULL) {
+    for(i = 0; i < CLIENTS_NUM; i++){
+        if(clients[i].private_info.endpoint.sin_addr.s_addr == 0){
             clients[i].private_info.endpoint = addr_client; //client endpoint
             __syscall(gettimeofday(&(clients[i].private_info.time_last_dgram), NULL)); //set current time as the last response time
             init_start_xy(map, clients[i].public_info.position.x, clients[i].public_info.position.y); //init coordinates
@@ -295,12 +295,12 @@ int main(int argc, char **argv) {
             // At this moment, we suppose that struct includes:
             // width (2 bytes), height (2 bytes) and the pointer to primitives
             _Static_assert((sizeof(BCSMAP) - sizeof(void*) == 4), "the size of BCSMAP was changed");
-			// Str1ker, 03.08.2018: proto convention
+            // Str1ker, 03.08.2018: proto convention
             //__syscall(send (s_fd, &map, 4, 0));
-			uint16_t tmp = htobe16(map.width);
-			__syscall(send (s_fd, &tmp, 2, 0));
-			tmp = htobe16(map.height);
-			__syscall(send (s_fd, &tmp, 2, 0));
+            uint16_t tmp = htobe16(map.width);
+            __syscall(send (s_fd, &tmp, 2, 0));
+            tmp = htobe16(map.height);
+            __syscall(send (s_fd, &tmp, 2, 0)); 
 
             __syscall(send (s_fd, map.map_primitives, map.width * map.height, 0));
             printf("map was sent to client\n");
@@ -314,9 +314,9 @@ int main(int argc, char **argv) {
         if (event.data.fd == u_fd) { //check event
             // Receive message-CONNECT from client 
             __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-			// Str1ker, 03.08.2018: ignore beacon packets
-			if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
-				continue;
+            // Str1ker, 03.08.2018: ignore beacon packets
+            if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
+                continue;
 
             printf("received from client: %.*s\n", result, msg);
             
