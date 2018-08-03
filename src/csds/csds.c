@@ -233,7 +233,6 @@ int main(int argc, char **argv) {
     BCSMSG cl_msg;
     BCSMSGREPLY serv_msg;
     void *status;
-    char msg[BCSDGRAM_MAX];
     int epfd; //event polling instance
     int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
     int result;
@@ -318,32 +317,45 @@ int main(int argc, char **argv) {
             if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
                 continue;
 
-            printf("received from client: %.*s\n", result, msg);
-            
-            // Set initial message parameters
-            serv_msg.packet_no = cl_msg.packet_no;
-            serv_msg.type = htobe32(BCSREPLT_MAP);
-
-            // Send message-MAP to client
-            __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
+            printf("received CONNECT from client\n");
 
             // Add client to array
-            __syscall(id = add_client(&map, clients, addr_client));
-            //ALOGD();
+            if((id = add_client(&map, clients, addr_client)) == -1) {
+                // Set initial message parameters
+                serv_msg.packet_no = cl_msg.packet_no;
+                serv_msg.type = htobe32(BCSREPLT_NACK);
+                // Send message-MAP to client
+                __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
+                continue;
+            }
+            else { // client limit is settled
+                // Set initial message parameters
+                serv_msg.packet_no = cl_msg.packet_no;
+                serv_msg.type = htobe32(BCSREPLT_MAP);
+                // Send message-NACK to client
+                __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
+
+            }
 
             // Send coordinates to client
-            __syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
-            printf("coordinates were sent to client");
-            delete_client(clients, addr_client);
+            /*__syscall(sendto(u_fd, &(clients[id].public_info.position), sizeof(POINT), 0, (struct sockaddr *) &addr_client, addr_size));
+            printf("coordinates were sent to client\n");
+            delete_client(clients, addr_client);*/
 
             // Str1ker, 03.08.2018: вернул на место коммит 668e0ba604247ef0e8e34f45b138b620cdd3324f
             // Receive message-CONNECT2
             __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-            printf("received from client: %.*s\n", result, msg);
-             // Change client stat if the previous was BCSCLST_CONNECTING
+            printf("received CONNECT2 from client\n");
+            // Change client stat if the previous was BCSCLST_CONNECTING
             if(clients[id].public_info.state == BCSCLST_CONNECTING){
                 clients[id].public_info.state = BCSCLST_CONNECTED;
             }
+            // Set initial message parameters
+            serv_msg.packet_no = cl_msg.packet_no;
+            serv_msg.type = htobe32(BCSREPLT_ACK);
+            // Send message-ACK to client
+            __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
+
         }
     }
 
@@ -360,3 +372,28 @@ int main(int argc, char **argv) {
 
     return(EXIT_SUCCESS);
 }
+
+
+/*
+__syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
+swich(be32toh(cl_msg.action)){
+    case: BCSACTION_CONNECT // params: nickname: TODO
+        break;
+    case: BCSACTION_CONNECT2 // noparams
+        break;
+    case: BCSACTION_DISCONNECT // noparams
+        break;
+    case: BCSACTION_MOVE // params: BCSDIRECTION
+        break;
+    case: BCSACTION_FIRE // noparams
+        break;
+    case: BCSACTION_STRAFE // params: BCSDIRECTION
+        break;
+    case: BCSACTION_ROTATE // params: BCSDIRECTION
+        break;
+    case: BCSACTION_REQSTATS // noparams
+        break;
+}
+
+
+*/
