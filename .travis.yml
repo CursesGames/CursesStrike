@@ -3,7 +3,7 @@ git:
   quiet: true
 sudo: false
 before_install:
-- wget -nv https://ultibot.ru/files/realpath .
+- wget -nv https://ultibot.ru/files/realpath
 - export PATH=$(pwd):$PATH
 install:
 - realpath --version
