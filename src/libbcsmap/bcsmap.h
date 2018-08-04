@@ -7,6 +7,12 @@
 // количество каналов в RGB
 #define RGB_NUM 3
 
+#ifndef min
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#endif
+
+#define _BUF_SIZE 4096
+
 typedef uint8_t  BYTE;
 typedef uint16_t WORD;
 typedef uint32_t DWORD;
@@ -70,13 +76,20 @@ typedef enum {
     PUNIT_OPEN_SPACE = 'o'  // white color
 } __attribute__((packed)) BCSMAPPRIMITIVE;
 
-// загрузить из bmp, результат конвертации в памяти
+// Сonverts a file <filename> of the bmp format to a set of primitives for 
+// further work. The function allocates memory for storing an array of 
+// primitives (map->map_primitives), which the caller must clear after use.
+// The function supports work only on machines with the LE order of bytes.
 bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map); 
 
-// загрузить из bcsmap в память
+// Convert a map file to a structure in the program memory for further work.
+// The function allocates memory for storing an array of primitives 
+// (map->map_primitives), which the caller must clear after use.
+// Can useable in any bytes order (BE or LE)
 bool bcsmap_load(const char *filename, BCSMAP *map); 
 
-// сохранить из памяти в bcsmap
+// Saving a map to .bcsmap format on local disk
+// Can useable in any bytes order (BE or LE)
 bool bcsmap_save(const char *filename, BCSMAP *map); 
 
 #endif

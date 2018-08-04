@@ -6,22 +6,28 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <endian.h>
+#include <errno.h>
 
 #include "bcsmap.h"
 #include "../liblinux_util/linux_util.h"
 
 bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map) 
 {
-    int source_bmp_fd = 0;                      // fd for source .bmp file
-    int padding = 0;
-    BYTE* primitives_arr = NULL;
-    int temp_RGB_unit = 0;
-
     bmp_file_header_t bmp_header;
+    bmp_file_header_t* temp_iterator_header;
     bmp_info_header_t bmp_info;
+    bmp_info_header_t* temp_iterator_info;    
+    
     rgb_triple_t* raster_data = NULL;
-
+    BYTE* primitives_arr = NULL;
     char* temp_raster_ptr = NULL;
+
+    int source_bmp_fd = 0;                      // fd for source .bmp file
+    int temp_RGB_unit = 0;
+    int padding = 0;
+    
+    ssize_t now_read = 0;
+
     size_t bmp_header_size = sizeof(bmp_header);
     size_t bmp_info_size = sizeof(bmp_info);
     size_t useful_raster_size = 0;
@@ -35,16 +41,49 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
     __syscall(source_bmp_fd = open(filename, O_RDONLY));
 
     // reading bmp file header
-    __syscall(read(source_bmp_fd, &bmp_header, bmp_header_size));
+    // If reading process has been interruped of some signal
+    // read() return -1 and install errno = EINTR, what mean 
+    // what need rereading without changes. If now_read
+    // less than bmp_header_size then need to read the missing 
+    // bytes and add them to the buffer (bmp_headr in our case)
+    // This situation could occur if the signal interrupted the 
+    // reading process
+    temp_iterator_header = &bmp_header;
+    while (bmp_header_size != 0 && 
+        (now_read = read(source_bmp_fd, temp_iterator_header, bmp_header_size)) != 0) {
+        if (now_read == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            __syscall(now_read);
+        }
+
+        bmp_header_size -= now_read;
+        temp_iterator_header += now_read;
+    }
 
     // check BMP format
     if (bmp_header.bfType != 0x4D42) {
-        fprintf(stderr, "Unsupported file format\n");
+        ALOGE("Unsupported file format\n");
+        __syscall(close(source_bmp_fd));
         exit(EXIT_FAILURE);
     }
 
-    // reading bmp file header
-    __syscall(read(source_bmp_fd, &bmp_info, bmp_info_size));
+    // reading bmp information header
+    temp_iterator_info = &bmp_info;
+    now_read = 0;
+    while (bmp_info_size != 0 && 
+        (now_read = read(source_bmp_fd, temp_iterator_info, bmp_info_size)) != 0) {
+        if (now_read == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            __syscall(now_read);
+        }
+
+        bmp_info_size -= now_read;
+        temp_iterator_header += now_read;
+    }
 
     // jumping to raster data;
     __syscall(lseek(source_bmp_fd, bmp_header.bfOffBits, SEEK_SET));
@@ -112,12 +151,21 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
     map->width = bmp_info.biWidth;
     map->map_primitives = primitives_arr;
 
+    free(raster_data);  // freeing memory after getting primitives
+
+    VERBOSE {
+        ALOGI("BCSMAP success located in memory\n");
+    }
     return true;
 }
 
 bool bcsmap_save(const char *filename, BCSMAP *map)
 {
     int destination_fd = 0;
+    ssize_t now_write = 0;
+    ssize_t left_bytes = map->height*map->width;
+
+    uint8_t* iterator = NULL;
     char bcsmap_id[] = "csm";
 
     // translation into BE
@@ -130,8 +178,16 @@ bool bcsmap_save(const char *filename, BCSMAP *map)
 
     __syscall(write(destination_fd, map, sizeof(map->height)*2));
 
-    for (int i = 0; (map->map_primitives[i]) != 0; ++i) {
-        __syscall(write(destination_fd, map->map_primitives + i, sizeof(BYTE)));
+    // writing primitives on chunks
+    iterator = map->map_primitives;
+    while (true) {
+        __syscall(now_write = write(destination_fd, iterator, 
+                    min(left_bytes,_BUF_SIZE)));
+        if (now_write == left_bytes) {
+            break;
+        }
+        left_bytes -= now_write;
+        iterator += now_write;
     }
 
     __syscall(close(destination_fd));
@@ -140,20 +196,26 @@ bool bcsmap_save(const char *filename, BCSMAP *map)
     map->height = htobe16(map->height);
     map->width = htobe16(map->width);
 
+    VERBOSE {
+        ALOGI("BCSMAP successfully saved in local disk\n");
+    }
     return true;
 }
 
 bool bcsmap_load(const char *filename, BCSMAP *map) 
 {
-    int bcsmap_fd = 0;
-    int index = 0;
+    BYTE* buf = malloc(_BUF_SIZE);    
     char bcsmap_check[4];
-    ssize_t rbyte = 0;
-    ssize_t total_read = 0;
-    size_t map_size = 0;
-    BYTE* primitives_arr = NULL;
-    BYTE temp_primitive = 0;
 
+    BYTE* primitives_arr = NULL;
+    BYTE* temp_primitive = NULL;
+    
+    int bcsmap_fd = 0;
+
+    ssize_t now_read = 0;
+    
+    size_t map_size = 0;
+    
     __syscall(bcsmap_fd = open(filename, O_RDONLY));
 
     // reading contorl string
@@ -173,22 +235,28 @@ bool bcsmap_load(const char *filename, BCSMAP *map)
 
     map_size = (map->height) * (map->width);
     primitives_arr = malloc(map_size);
+    temp_primitive = primitives_arr;
+
 
     // reading primitives from map
-    while (true) {
-        __syscall(rbyte = read(bcsmap_fd, &temp_primitive, sizeof(temp_primitive)));
-
-        primitives_arr[index] = temp_primitive;
-        ++index;
-
-        total_read += rbyte;
-        if (total_read == map_size) {
-            ALOGI("Reading map was successful\n");
-            break;
+    while ((now_read = read(bcsmap_fd, buf, _BUF_SIZE)) != 0) {
+        if (now_read == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            __syscall(now_read);
         }
+
+        temp_primitive = mempcpy(temp_primitive, buf, now_read);
     }
 
     map->map_primitives = primitives_arr;
+
+    VERBOSE {
+        ALOGI("Map loading finished success\n");
+    }
+
+    free(buf);
 
     return true;
 }
