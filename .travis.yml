@@ -4,6 +4,7 @@ git:
 sudo: false
 before_install:
 - wget -nv https://ultibot.ru/files/realpath
+- chmod +x ./realpath
 - export PATH=$(pwd):$PATH
 install:
 - realpath --version
