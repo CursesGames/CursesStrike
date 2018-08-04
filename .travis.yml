@@ -54,8 +54,3 @@ deploy:
     all_branches: true
 notifications:
   webhooks: https://ultibot.ru/services/traviswh
-    on_success: change
-    on_failure: always
-    on_start: change
-    on_cancel: always
-    on_error: always
