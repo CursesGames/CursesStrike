@@ -1,20 +1,21 @@
 git:
   depth: 1
   quiet: true
+sudo: false
 before_install:
-- wget -nv http://launchpadlibrarian.net/240350636/coreutils_8.25-2ubuntu2_amd64.deb
+- wget -nv https://ultibot.ru/files/realpath .
+- export PATH=$(pwd):$PATH
 install:
-- sudo dpkg -i ./coreutils_8.25-2ubuntu2_amd64.deb
 - realpath --version
 matrix:
   include:
   - name: GCC
     env: CC=gcc CC_ARCH=x64_gcc
-    before_script: sudo apt-get update -qq && sudo apt-get install gcc make
+    before_script: 
     script: make debug && make
   - name: Clang
     env: CC=clang CC_ARCH=x64_clang
-    before_script: sudo apt-get update -qq && sudo apt-get install clang make
+    before_script: 
     script: make debug && make
   - name: Linaro ARM
     env:
@@ -50,3 +51,12 @@ deploy:
     repo: CursesGames/CursesStrike
     tags: true
     all_branches: true
+notifications:
+  webhooks:
+    urls:
+      - https://ultibot.ru/services/traviswh
+    on_success: change
+    on_failure: always
+    on_start: change
+    on_cancel: always
+    on_error: always
