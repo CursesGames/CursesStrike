@@ -10,6 +10,7 @@
 // https://www.guyrutenberg.com/2008/12/20/expanding-macros-into-string-constants-in-c
 
 #ifndef _MSC_VER
+// assert for any ncurses return value
 #define nassert(x)                                                            \
     {                                                                         \
         __typeof(x) y = (x);                                                  \
@@ -35,7 +36,7 @@
 
 #pragma GCC diagnostic ignored "-Wpedantic"
 enum raw_keys {
-	  RAW_KEY_ERR = -1
+      RAW_KEY_ERR = -1
     , RAW_KEY_TAB = 9
     , RAW_KEY_ENTER = 10
     , RAW_KEY_NUMPAD_ENTER = 343
@@ -46,15 +47,22 @@ enum raw_keys {
     , RAW_KEY_END_ALT = 0x168
     , RAW_KEY_PAGE_DOWN = 0x152
     , RAW_KEY_PAGE_UP = 0x153
-	// long long key codes
-	, RAW_KEY_F1 = 0x1b5b31317e
-	, RAW_KEY_F2 = 0x1b5b31327e
-	, RAW_KEY_F3 = 0x1b5b31337e
-	, RAW_KEY_F4 = 0x1b5b31347e
+      // long long key codes
+    , RAW_KEY_F1 = 0x1b5b31317e
+    , RAW_KEY_F2 = 0x1b5b31327e
+    , RAW_KEY_F3 = 0x1b5b31337e
+    , RAW_KEY_F4 = 0x1b5b31347e
 };
 #pragma GCC diagnostic warning "-Wpedantic"
 
+// print error into stdout and stderr in form:
+// [x] ncurses err: '<x>' at <file>: line
+// calls endwin() and exit()
 bool ncurses_raise_error(const char *x, const char *file, int line);
+// create chtype string from char string with:
 chtype *create_chstr(char *str, int len, chtype attr);
+// move, add attributed string with fixed length:
 int mvwaddattrfstr(WINDOW *wnd, int y, int x, int len, char *str, chtype attr);
+// read from keyboard with long key codes
+// возвращает 8-байтное число, в котором хранится длинный код символа
 int64_t raw_wgetch(WINDOW *wnd);

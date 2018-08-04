@@ -51,19 +51,24 @@
 // output
 #define logprint(...) fprintf(stderr, __VA_ARGS__)
 
-// Android-like logging
+// Android-like logging with colors
+// Error
 #define ALOGE(...) logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST " " __VA_ARGS__)
+// Warning
 #define ALOGW(...) logprint(ANSI_BKGRD_YELLOW ANSI_COLOR_BLACK "[!]" ANSI_CLRST " " __VA_ARGS__)
+// Information
 #define ALOGI(...) logprint(ANSI_BKGRD_GREEN ANSI_COLOR_BLACK "[i]" ANSI_CLRST " " __VA_ARGS__)
+// Debug
 #define ALOGD(...) logprint(ANSI_BKGRD_CYAN ANSI_COLOR_BLACK "[D]" ANSI_CLRST " " __VA_ARGS__)
+// Verbose
 #define ALOGV(...) logprint(ANSI_BKGRD_WHITE ANSI_COLOR_BLACK "[V]" ANSI_CLRST " " __VA_ARGS__)
 
 // assert (release-time)
-// м€гка€ проверка услови€. напечатает ошибку, но выполнение не прервЄтс€
+// мягкая проверка условия. напечатает ошибку, но выполнение не прервётся
 #define lassert(x) (void)((!!(x)) || syscall_print_error(#x, __FILE__, __LINE__, 0))
-// жЄстка€ проверка услови€. напечатает ошибку и развалит программу через abort()
+// жёсткая проверка условия. напечатает ошибку и развалит программу через abort()
 #define sysassert(x) (void)((!!(x)) || syscall_error(#x, __FILE__, __LINE__))
-// жЄстка€ проверка услови€, как и выше, ориентированна€ на системные вызовы
+// жёсткая проверка условия, как и выше, ориентированная на системные вызовы
 #define __syscall(x) sysassert((x) != -1)
 
 // debug
@@ -71,5 +76,7 @@ extern bool verbose;
 #define VERBOSE if(verbose)
 
 // exported functions
+// call syscall_print_error, calls abort() and if there is ncurses calls endwin()
 extern int syscall_error(const char *x, const char *file, int line);
+// prints error string from err_no to stderr
 extern int syscall_print_error(const char *x, const char *file, int line, int err_no);
