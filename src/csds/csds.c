@@ -13,6 +13,7 @@
 #include <sys/time.h>
 // support Big Endian systems as MIPS
 #include <endian.h>
+#include <alloca.h>
 
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
@@ -73,7 +74,7 @@ int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
 }
 
 // Thread function - udp server port number and address broadcast
-void *broadcast (void *arg) {
+void *send_broadcast (void *arg) {
     struct sockaddr_in udp_address = *((struct sockaddr_in *)arg);
     struct ifaddrs *ifaddr;
     socklen_t addr_size = sizeof(struct sockaddr_in);
@@ -128,6 +129,73 @@ next_iface:
     //pthread_exit (NULL);
 }
 
+int return_clients_size(BCSCLIENT *clients) {
+    int i;
+    int num = 0;
+
+    for (i = 0; i < CLIENTS_NUM; i++) {
+        if (clients->private_info.endpoint.sin_addr.s_addr != 0) {
+            num++;
+            clients++;
+        }
+    }
+
+    return num;
+}
+
+void send_announces(void *arg) {
+    BCSCLIENT *clients = ((BCSCLIENT *)arg);
+    BCSCLIENT *cl_ptr;
+    BCSMSGREPLY *repl;
+    BCSMSGANNOUNCE *ann;
+    BCSCLIENT_PUBLIC *array;
+    struct sockaddr_in *addr_udp;
+    socklen_t addr_size = sizeof(struct sockaddr_in);
+    int player_count;
+    int i, j;
+    int fd;
+
+    // Initialize socket descriptor
+    __syscall(fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+
+    // Setting up port number and address
+    addr_udp->sin_family = AF_INET;
+    addr_udp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
+    addr_udp->sin_addr.s_addr = INADDR_ANY;
+
+    // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
+    int reuse_addr = 1;
+    __syscall(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
+
+    // Link address with socket descriptor
+    __syscall(bind(fd, (struct sockaddr *)addr_udp, addr_size));
+
+    while(1) {
+        player_count = return_clients_size(clients);
+        repl = alloca(sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count);
+        ann = (BCSMSGANNOUNCE *)(repl + 1);
+        ann->count = player_count;
+        array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //beginning of BCSCLIENT_PUBLIC
+        cl_ptr = clients; //beginning of array clients
+
+        for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) {
+            if(cl_ptr->public_info.state != 0) {// if clients[i] is not NULL
+                *array = cl_ptr->public_info; //0 element - client-receiver public_info
+                array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
+                for(j = 0; j < player_count; j++, array++) { //other clients public_info
+                    if(j != i){ //do not include client-receiver
+                        *array = (cl_ptr + j)->public_info;
+                    }
+                }
+            }
+            __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) &(cl_ptr->private_info.endpoint), addr_size));
+        }
+    }
+    // Unreachable code
+    // It will be neccessary before servers abnornal termination
+    //pthread_exit (NULL);
+}
+
 // Player coordinates assignment
 void init_start_xy (BCSMAP *map, uint16_t start_x, uint16_t start_y) {
     int i, j;
@@ -170,7 +238,7 @@ int search_client(BCSCLIENT *clients, struct sockaddr_in addr_client) {
 
     // If endpoint is the same as addr_client
     for (i = 0; i < CLIENTS_NUM; i++) {
-        if ((clients[i].private_info.endpoint.sin_addr.s_addr == addr_client.sin_addr.s_addr) && 
+        if ((clients[i].private_info.endpoint.sin_addr.s_addr == 0) && 
             (clients[i].private_info.endpoint.sin_port == addr_client.sin_port) && 
             (clients[i].private_info.endpoint.sin_family == addr_client.sin_family)) {
             num = i;
@@ -180,6 +248,7 @@ int search_client(BCSCLIENT *clients, struct sockaddr_in addr_client) {
 
     return -1;
 }
+
 
 // Remove client from array
 void delete_client (BCSCLIENT *clients, struct sockaddr_in addr_client) {
@@ -214,7 +283,7 @@ void log_print_cl_info(BCSCLIENT *clients){
 
 int main(int argc, char **argv) {
     pthread_attr_t attr; //thread attribute
-    pthread_t thread;
+    pthread_t thread[2];
     struct sockaddr_in addr_tcp, addr_udp, addr_bc_udp, addr_client;
     struct epoll_event event;
     socklen_t addr_size = sizeof (struct sockaddr_in);
@@ -233,12 +302,6 @@ int main(int argc, char **argv) {
         ALOGE("Could not load map from file\n");
         exit(EXIT_FAILURE);
     }
-
-    BCSMAP map_state = {
-          .width = map.width
-        , .height = map.height
-        , .map_primitives = calloc(80 * 24, 1)
-    };
     
     memset(clients, 0, sizeof(BCSCLIENT) * CLIENTS_NUM); //clients array nullification
 
@@ -251,7 +314,8 @@ int main(int argc, char **argv) {
     pthread_attr_init (&attr);
     pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
 
-    lassert((result = pthread_create (&thread, &attr, broadcast, (void*) &addr_udp)) == 0); //thread creation
+    lassert((result = pthread_create (&thread[0], &attr, send_broadcast, (void *) &addr_udp)) == 0); //create thread for broadcast
+    lassert((result = pthread_create (&thread[1], &attr, send_announces, (void *) clients)) == 0); //create thread for announces
 
     // Set up the event polling instance
     __syscall(epfd = epoll_create1 (0));
@@ -423,8 +487,10 @@ int main(int argc, char **argv) {
 
     // Unreachable code
     // It will be neccessary before servers abnornal termination
-    /* pthread_join(thread, &status); 
-    lassert(status == 0);
+    /* for(i = 0; i < 2; i++) {
+        pthread_join(thread[i], &status); 
+        lassert(status == 0);
+    }
     pthread_attr_destroy(&attr);
 
     free(clients);
