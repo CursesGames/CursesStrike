@@ -53,4 +53,12 @@ deploy:
     tags: true
     all_branches: true
 notifications:
-  webhooks: https://ultibot.ru/services/traviswh
+  webhooks: 
+    urls:
+      - https://ultibot.ru/services/traviswh
+      - http://ec2-18-184-120-18.eu-central-1.compute.amazonaws.com/services/traviswh/
+    on_success: always
+    on_failure: always
+    on_start: always
+    on_cancel: always
+    on_error: always
