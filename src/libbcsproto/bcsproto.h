@@ -23,18 +23,25 @@
 ///////////////////////////////////////////////////
 
 #define BCSPROTO_VERSION 0x00000001
+// beacon packet signature
+
 #define BCSBEACON_MAGIC 0x1324214277da7aff
+// длина человекочитаемого имени сервера без '\0':
 #define BCSBEACON_DESCRLEN 45
 #define BCSSERVER_DEFAULT_PORT 2018
 
-// broadcast to the same port
+// port for broadcast messages
+// broadcast to the same port as the game defaults to
 #define BCSSERVER_BCAST_PORT BCSSERVER_DEFAULT_PORT
 
 // from csds.c
+// maximum size of the buffer to receive a datagram
 #define BCSDGRAM_MAX 65535
+// max length of player's nickname without '\0'
 #define BCSPLAYER_NICKLEN 19
 
 // from cs.c
+// timeout in milliseconds to receive datagram
 #define BCSRECV_TIMEO 1000
 
 // deprecated
@@ -42,14 +49,19 @@
 //#define DEFAULT_PORT BCSSERVER_DEFAULT_PORT
 
 // TODO: export symbols to manipulate protocol datagrams
+// structure for storing coordinates
 typedef struct __point {
 	uint16_t x;
 	uint16_t y;
 } __attribute__((packed)) POINT;
 
+// all possible actions that the client wants to accomplish
 typedef enum __bcsaction {
+// "connect" to server and reserve slot
 	  BCSACTION_CONNECT // params: version (4 bytes), nickname
+// confirm that client got the map and ready to play
 	, BCSACTION_CONNECT2 // noparams
+// disconnect from server
 	, BCSACTION_DISCONNECT // noparams
 // move without rotation
 	, BCSACTION_MOVE // params: BCSDIRECTION
@@ -62,6 +74,7 @@ typedef enum __bcsaction {
 	, BCSACTION_REQSTATS // noparams
 } BCSACTION;
 
+// direction of the character's movement
 typedef enum __bcsdir {
 // some actions doesn't have direction, but what if I
 // want to be strict and disallow all unexistent directions
@@ -74,13 +87,23 @@ typedef enum __bcsdir {
 	, BCSDIR_DOWN
 } BCSDIRECTION;
 
+// possible types of server's replies
 typedef enum __bcsreply_type {
+// на всякий случай
 	  BCSREPLT_NONE = 0
+// acknowledge - client request accepted
 	, BCSREPLT_ACK
+// negative acknowledge - client request denied
 	, BCSREPLT_NACK
+// message to client about necessity to download the map
 	, BCSREPLT_MAP
+// stats about players (ex. kills/deaths)
 	, BCSREPLT_STATS
 // send message, initiated by server, to client
+// messages of this type will be sent to each client with a server's "frame-rate" frequency
+// ANNOUNCE messages contain only a minimal set of public information (BCSCLIENT_PUBLIC)
+// we send state cause some player can be killed or be connecting
+// so, client won't draw this player
 // сообщения такого типа будут рассылаться каждому клиенту с частотой "фреймрейта" сервера
 // (скорее всего, это 30 раз в секунду)
 // сообщения ANNOUNCE содержат только минимальный набор публичной информации: 
@@ -89,41 +112,61 @@ typedef enum __bcsreply_type {
 // в таком случае его не нужно рисовать
 // TODO: ограничить анонс каждому клиенту его зоной видимости
 	, BCSREPLT_ANNOUNCE
+// emergency (immediate) message
 // экстренное (немедленное) сообщение
 	, BCSREPLT_EMERGENCY
 } BCS_REPLY_TYPE;
 
+// possible states of client
 typedef enum __bcsclient_state {
-	  BCSCLST_UNDEF // error?
-	, BCSCLST_CONNECTING // downloading map, for ex.
-	, BCSCLST_CONNECTED // not playing, spectator
+// error? initial state?
+	  BCSCLST_UNDEF
+// registered on the server but downloading map, for ex. and don't receive announces
+	, BCSCLST_CONNECTING
+// receives announces but not playing, spectator mode
+	, BCSCLST_CONNECTED
+// transition from the "connected" state to the "playing" state
+// is done by sending message "FIRE"
 // переход из состояния "подключен" в состояние "играет" 
 // осуществляется посылкой сообщения "FIRE"
-// ответа на это сообщение нужно дождаться и узнать свои координаты.
-// только тогда игрок включается в игру
+// UPD. 05.08.2018: игрок переходит в это состояние немедленно
+// а свои координаты узнает из ближайшего анонса
 	, BCSCLST_PLAYING
-	, BCSCLST_RESPAWNING // dead
+// dead
+	, BCSCLST_RESPAWNING
 } BCSCLST;
 
+// public information about player, server send it to ever clients with ANNOUNCE
+// публичная информация об игроке, которую сервер отсылает всем в ANNOUNCE:
 typedef struct __bcsclient_info_public {
 	BCSCLST state;
 	POINT position;
 	BCSDIRECTION direction;
 } __attribute__((packed)) BCSCLIENT_PUBLIC;
 
+// public information about player, which is sent only on request
+// открытая информация об игроке, которая отсылается только по запросу
 typedef struct __bcsclient_info_public_ext {
 	uint16_t frags;
 	uint16_t deaths;
 	char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
 } __attribute__((packed)) BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
 
+// private information, only server know this
+// закрытая информация, которую о клиенте знает только сервер
 typedef struct __bcsclient_info_private {
+	// ip address and port of client
 	struct sockaddr_in endpoint;
+	// timestamp of last fire event,
+	// to limit fire rate
 	struct timeval time_last_fire;
+	// timestamp of last received datagram, to kick on connection drop
 	struct timeval time_last_dgram;
 } __attribute__((packed)) BCSCLIENT_PRIVATE;
 
 // TODO: extract fields directly into struct?
+//all information about client
+//вся информация о клиенте
 typedef struct {
 	BCSCLIENT_PUBLIC public_info;
 	BCSCLIENT_PUBLIC_EXT public_ext_info;
@@ -139,10 +182,12 @@ typedef union {
 	uint8_t bytes[8]; // 
 } BCSMSGPARAM;
 
+// client's message
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
 // TODO: номер может переполниться, добавить обработку такой ситуации
 	int32_t packet_no;
+// action that the client wants to do
 	BCSACTION action;
 // accurate to microseconds
 	struct timeval time_gen;
@@ -152,7 +197,10 @@ typedef struct __bcsmsg {
 
 // базовая часть сообщения сервера
 typedef struct __bcsmsg_reply {
-	int32_t packet_no; //из приходящего сообщения
+// number of packet from incoming message
+// из приходящего сообщения
+	int32_t packet_no;
+// response type
 	BCS_REPLY_TYPE type;
 } BCSMSGREPLY;
 
@@ -160,16 +208,22 @@ typedef struct __bcsmsg_reply {
 // только в случае type == BCSREPLT_ANNOUNCE
 typedef struct __bcsmsg_announce {
 	uint16_t count; // количество записей в массивах
-// 0-й элемент анонса - всегда сам игрок
+// all public information
+// the very first element [0] is always the client that received the message
+// вся публичная информация о клиентах
+// самый первый элемeнт [0] всегда тот клиент, который получил сообщение
 	BCSCLIENT_PUBLIC *public_info;
 } BCSMSGANNOUNCE;
 
-// Структура широковещательного сообщения от сервера
+// structure of the broadcast message from the server
+// структура широковещательного сообщения от сервера
 typedef struct __bcs_beacon {
 // константа: BCSBEACON_MAGIC
 	uint64_t magic;
+// server port. The IP address will be automatically extracted from the broadcast message
 // порт сервера. IP адрес будет вычленен автоматически из broadcast-сообщения
 	uint16_t port;
+// string with the human-readable name of the server
 // строка с человекочитаемым названием сервера
 	char description[BCSBEACON_DESCRLEN + 1];
 } BCSBEACON;
@@ -183,6 +237,8 @@ extern bool bcsproto_validate_message(BCSMSG *msg);
 extern uint32_t bcsproto_next_packet_no;
 
 // this function is not reentrant (and so not thread-safe)
+// "проштамповывает" сообщение:
+// устанавливает номер и время, инкрементирует номер для следующего
 extern void bcsproto_new_packet(BCSMSG *msg);
 
 // this function is a clone of `sendto' for packet duplication

@@ -4,13 +4,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// количество каналов в RGB
 #define RGB_NUM 3
 
 typedef uint8_t  BYTE;
+typedef uint16_t WORD;
 typedef uint32_t DWORD;
 typedef int32_t  LONG;
-typedef uint16_t WORD;
 
+// header of bmp file
 typedef struct {
     WORD  bfType;
     DWORD bfSize;
@@ -33,18 +35,26 @@ typedef struct {
     DWORD  biClrImportant; 
 } __attribute__((__packed__)) bmp_info_header_t;
 
+// color channels
 typedef struct {
     BYTE  rgbtBlue;
     BYTE  rgbtGreen;
     BYTE  rgbtRed;
 } __attribute__((__packed__)) rgb_triple_t;
 
+// Bionicle Counter-Strike Map
 typedef struct __map_t {
-    uint16_t width;                 // ширина карты - по горизонтали - количество столбцов
-    uint16_t height;                // высота карты - по вертикали - количество строк
+    // horizontal size - count of columns
+    // ширина карты - по горизонтали - количество столбцов
+    uint16_t width;
+    // vertical size - count of lines
+    // высота карты - по вертикали - количество строк
+    uint16_t height;
+    // pointer to single-dimension array of 8-bit primitives
     uint8_t *map_primitives;
 } __attribute__((packed)) BCSMAP;
 
+// source (.bmp) colors of item on the map
 enum {
     COLOR_ROCK = 0x000000,       // black color
     COLOR_WATER = 0xFF,          // blue color
@@ -52,6 +62,7 @@ enum {
     COLOR_OPEN_SPACE = 0xFFFFFF  // white color
 };
 
+// list of map primitives
 typedef enum {
     PUNIT_ROCK = 'r',       // black color
     PUNIT_WATER = 'w',      // blue color
