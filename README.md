@@ -1,9 +1,14 @@
 # Curses-Strike
-Status of `master` on x86_64: [![Build Status](https://travis-ci.com/CursesGames/CursesStrike.svg?branch=master)](https://travis-ci.com/CursesGames/CursesStrike)
 
 This is a 2D-shooter with multiplayer, based on NCurses.
 
 Also known as "Bionicle Counter-Strike", but "Curses-Strike" sounds better.
+
+Status of `master` on x86_64: 
+gcc: [![Build Status](https://ultibot.ru/services/traviswh/status.php?branch=master&job=1)]
+clang: [![Build Status](https://ultibot.ru/services/traviswh/status.php?branch=master&job=2)]
+Status of `master` on armv7l: [![Build Status](https://ultibot.ru/services/traviswh/status.php?branch=master&job=3)]
+Status of `master` on mips-24kc: [![Build Status](https://ultibot.ru/services/traviswh/status.php?branch=master&job=4)]
 
 How to build:
 - Clone this repo
@@ -13,8 +18,6 @@ How to build:
 - Executables are in `bin` subdirectory
 - If you want a single target, just point it, for example: `make cs` or `make csds`
 
-Please note that cross-compiling is a beta feature and something may fail! :(
-
 Feel free to send issues and pull requests.
 
-Copyleft (c) Linux Flowers, 2018
+Copyleft (c) Linux Flowers Team, 2018
