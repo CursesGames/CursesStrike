@@ -1,4 +1,5 @@
 // Note: this include is a beta feature for design- and compile-time
+// ReSharper disable once CppUnusedIncludeDirective
 #include "../liblinux_util/mscfix.h"
 
 #include "ncurses_util.h"

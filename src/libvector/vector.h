@@ -3,8 +3,9 @@
 // Note: this include is a beta feature for design- and compile-time
 #include "../liblinux_util/mscfix.h"
 
-#include <stdbool.h>
 #include <stdint.h>
+#include <stdbool.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <stddef.h>
 
 #ifndef min

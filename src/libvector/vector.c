@@ -2,12 +2,12 @@
 #include "../liblinux_util/mscfix.h"
 
 #include <stdlib.h>
-#include <string.h>
 #include "vector.h"
 
 #ifdef VALGRIND_SUCKS
 #pragma message "Yeah, valgrind sucks on realloc()! We will try to work it out."
 #define realloc(ptr,size) __force_realloc(ptr,size)
+#include <string.h>
 
 void *__force_realloc(void *ptr, size_t size) {
 	void *mem = malloc(size);
