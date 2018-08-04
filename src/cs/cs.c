@@ -25,11 +25,18 @@
 #include "../libvector/vector.h"
 
 // catching broadcast messages timeout
-#define BCAST_SCAN_TIMEOUT_SEC 5
+#define BCAST_SCAN_TIMEOUT_SEC 4
 // assume no more than 3 good ifaces by default
 #define BCSIFACES_APPROX 3
 // assume no more than 10 good servers by default
 #define BCSSERVERS_APPROX 10
+
+// WARNING: this is a workaround for dumb C libraries like musl
+typedef union sigval sigval_t;
+
+// this is to shorten access to endpoint struct
+typedef struct sockaddr_in sockaddr_in;
+typedef struct sockaddr sockaddr;
 
 // taken from Bionicle Commander: https://github.com/Str1ker17/EltexLearning/blob/aa2fddc/src/bc/bc.c#L56
 typedef enum {
@@ -75,7 +82,7 @@ typedef union __bcast_srv_ep {
 
 typedef BCSBEACON BCAST_SRV;
 
-typedef struct {
+/*typedef struct {
 	pthread_mutex_t *mutex_data;
 	pthread_mutex_t *mutex_frame;
 	pthread_mutex_t *mutex_sock;
@@ -85,19 +92,33 @@ typedef struct {
 	WINDOW *below;
 	size_t ticks;
 	int32_t delay_val;
-} FPSTHREAD;
+} FPSTHREAD;*/
 
+// I don't bother with packing of this structure now
 typedef struct {
+	BCSCLIENT_PUBLIC self;
+	struct {
+		uint32_t count;
+		BCSCLIENT_PUBLIC *array;
+	} others;
+	pthread_mutex_t mutex_self; // this struct data exclusive access
+	pthread_mutex_t mutex_frame; // ncurses view exclusive access
+	pthread_mutex_t mutex_sock; // udp socket exclusive access
+	sockaddr_in endpoint; // Server IP:Port
+	int sockfd; // UDP socket
+	BCSMAP map;
+	BCSMAP map_overlay;
+	WINDOW *mappad;
+	WINDOW *below;
+	size_t frames;
+} BCSPLAYER_FULL_STATE;
+
+/*typedef struct {
 	pthread_mutex_t *mutex_sock;
 	BCSCLIENT_PUBLIC *state_public;
 	struct __endpoint server_endpoint;
 	int sockfd;
-} RCVTHREAD;
-
-void draw_window(FPSTHREAD *prm);
-
-// WARNING: this is a workaround for dumb C libraries like musl
-typedef union sigval sigval_t;
+} RCVTHREAD;*/
 
 // Создаёт вектор интерфейсов. Вектор должен быть неинициализированным
 size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
@@ -145,30 +166,21 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 	return count;
 }
 
-void timer_detonate(sigval_t argv) {
-	return;
-	FPSTHREAD *prm = (FPSTHREAD*)(argv.sival_ptr);
-	pthread_mutex_lock(prm->mutex_data);
-	++(prm->ticks);
-	stdscr->_clear = true;
-	prm->below->_clear = true;
-	pthread_mutex_unlock(prm->mutex_data);
-
-	draw_window(prm);
-	//return NULL;
-}
-
 void *receiver_func(void *argv) {
-	RCVTHREAD *prm = (RCVTHREAD*)argv;
+	BCSPLAYER_FULL_STATE *prm = (BCSPLAYER_FULL_STATE*)argv;
 	int sock = prm->sockfd;
-	struct __endpoint server = prm->server_endpoint;
+	struct __endpoint server = {
+		  .addr = prm->endpoint.sin_addr.s_addr
+		, .port = prm->endpoint.sin_port
+		, .zero = 0
+	};
 	struct sockaddr_in src;
 	socklen_t sa_len = sizeof(src);
 	char buf[BCSDGRAM_MAX];
 
 	while(true) {
 		ssize_t rcvd;
-		__syscall(rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (struct sockaddr*)&src, &sa_len));
+		__syscall(rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (sockaddr*)&src, &sa_len));
 		if(src.sin_addr.s_addr != server.addr || src.sin_port != server.port) {
 			ALOGD("Wrong datagram source: %s:%hu != %s:%hu\n"
 				, inet_ntoa(src.sin_addr), be16toh(src.sin_port)
@@ -236,6 +248,7 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
 			switch((BCSMAPPRIMITIVE)*ptr) {
 				case PUNIT_OPEN_SPACE:
 					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
+					// winch puts char under cursor, while waddch adjusts cursor
 					nassert(mvwinsch(pad, i, j, ' '));
 					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
 					//c = ' ';
@@ -274,7 +287,7 @@ void draw_map(WINDOW *pad, BCSMAP *map) {
 	
 }
 
-void do_action(BCSACTION action, BCSDIRECTION dir) {
+void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 	BCSMSG msg = {
 		  .action = htobe32(action)
 		, .un.long_p = 0
@@ -300,27 +313,30 @@ void do_action(BCSACTION action, BCSDIRECTION dir) {
 	}
 
 	// TODO: sendto()
+	bcsproto_new_packet(&msg);
+	sendto2(pfs->sockfd, &msg, sizeof(msg), 0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
 }
 
-void draw_window(FPSTHREAD *prm) {
-	pthread_mutex_lock(prm->mutex_frame);
+void draw_window(BCSPLAYER_FULL_STATE *prm) {
+	pthread_mutex_lock(&prm->mutex_frame);
     
     int w, h;
 	getmaxyx(stdscr, h, w);
-	
-    if(stdscr->_clear) {
-		stdscr->_clear = false;
-		nassert(werase(stdscr));
-	}
 
-	if(prm->below->_clear) {
-		prm->below->_clear = false;
-		nassert(werase(prm->below));
-		pthread_mutex_lock(prm->mutex_data);
-		mvwprintw(prm->below, 0, 1, "Frames: %zu", prm->ticks);
-		pthread_mutex_unlock(prm->mutex_data);
-	}
+	// what to do there?
+    //if(stdscr->_clear) {
+	//	stdscr->_clear = false;
+	//}
 
+	//if(prm->below->_clear) {
+	//prm->below->_clear = false;
+	nassert(werase(prm->below));
+	pthread_mutex_lock(&prm->mutex_self);
+	mvwprintw(prm->below, 0, 1, "Frames: %zu", ++prm->frames);
+	pthread_mutex_unlock(&prm->mutex_self);
+	//}
+
+	nassert(werase(stdscr));
 	nassert(wnoutrefresh(stdscr));
 	// copy a part of pad
 	// первые два параметра - верхний левый угол pad, с которого берём
@@ -328,9 +344,9 @@ void draw_window(FPSTHREAD *prm) {
     nassert(pnoutrefresh(prm->mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// draw player
-	nassert(wmove(stdscr, prm->state_public->position.y, prm->state_public->position.x));
+	nassert(wmove(stdscr, prm->self.position.y, prm->self.position.x));
 	wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-	winsch(stdscr, dirchar[prm->state_public->direction]);
+	winsch(stdscr, dirchar[prm->self.direction]);
 	wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	nassert(wnoutrefresh(stdscr));
 
@@ -338,8 +354,23 @@ void draw_window(FPSTHREAD *prm) {
 	nassert(wnoutrefresh(prm->below));
 	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
-	// отрисовали и хватит
-	pthread_mutex_unlock(prm->mutex_frame);
+	// порисовали и хватит
+	pthread_mutex_unlock(&prm->mutex_frame);
+}
+
+void timer_detonate(sigval_t argv) {
+	return;
+	/*
+	BCSPLAYER_FULL_STATE *prm = (BCSPLAYER_FULL_STATE*)(argv.sival_ptr);
+	pthread_mutex_lock(&prm->mutex_self);
+	++(prm->frames);
+	stdscr->_clear = true;
+	prm->below->_clear = true;
+	pthread_mutex_unlock(&prm->mutex_self);
+
+	draw_window(prm);
+	*/
+	//return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -349,19 +380,69 @@ int main(int argc, char **argv) {
 
 	// TODO: быстрое подключение через командную строку
 	verbose = true;
+
+	// The library uses the locale which the calling program has initialized.
+	// If the locale is not initialized, the library assumes that characters
+	// are printable as in ISO-8859-1, to work with certain legacy programs.
+	// You should initialize the locale and not rely on specific details of
+	// the library when the locale has not been setup.
+	// Source: man ncurses, line 30
+	// Str1ker, 03.08.2018: от себя. без включения локали карта на экране выводилась криво
 	setlocale(LC_ALL, "");
+
+	// Random is good. PRNG is.. enough good.
+	srand(time(NULL));
+
+	BCSPLAYER_FULL_STATE pfs = {
+		  .mutex_self  = PTHREAD_MUTEX_INITIALIZER
+		, .mutex_frame = PTHREAD_MUTEX_INITIALIZER
+		, .mutex_sock  = PTHREAD_MUTEX_INITIALIZER
+		, .self = { 
+			  .state = BCSCLST_UNDEF
+			, .direction = BCSDIR_UP
+			, .position= {
+				  .x = 0
+				, .y = 0
+			  }
+		  }
+		, .others = {
+			  .count = 0
+			, .array = NULL
+		  }
+		, .map = { // DONE: intialize right <- there
+			  .width = 0
+			, .height = 0
+			, .map_primitives = NULL
+		  }
+		, .map_overlay = {
+			  .width = 0
+			, .height = 0
+			, .map_primitives = NULL
+		  }
+		, .mappad = NULL
+		, .below = NULL
+		, .frames = 0
+		, .endpoint = {
+			  .sin_addr = INADDR_ANY
+			, .sin_port = 0
+			, .sin_family = AF_INET
+		  }
+		, .sockfd = -1 // erroneous socket
+	};
 
 	char buf[BCSDGRAM_MAX];
 	char addrstr[INET_ADDRSTRLEN];
 	// узнать все пригодные интерфейсы
 	VECTOR ifaces;
 
+	// ReSharper disable once CppJoinDeclarationAndAssignment
+	size_t iface_count;
 	int epollfd;
 	struct epoll_event ev_catch;
 	int reuse_port = 1;
-	size_t iface_count;
 
-start_bcast_scan:	
+start_bcast_scan:
+	// ReSharper disable once CppJoinDeclarationAndAssignment
 	iface_count = init_broadcast_receiver(&ifaces);
 
 	int *ubcls = (int*)malloc(sizeof(int) * ifaces.size);
@@ -375,7 +456,7 @@ start_bcast_scan:
 		__syscall(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 		// reuse addr to allow server & client on the same iface
 		__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
-		__syscall(bind(ubcls[i], (struct sockaddr*)&sin, sizeof(sin)));
+		__syscall(bind(ubcls[i], (sockaddr*)&sin, sizeof(sin)));
 
 		struct epoll_event evt = {
 			  .events = EPOLLIN | EPOLLERR
@@ -413,7 +494,7 @@ start_bcast_scan:
 
 		if(ev_catch.events & EPOLLIN) {
 			ssize_t len = recvfrom(ev_catch.data.fd, buf, BCSDGRAM_MAX, 0
-				, (struct sockaddr*)&srv_sin, &sa_len);
+				, (sockaddr*)&srv_sin, &sa_len);
 			BCSBEACON *beacon = (BCSBEACON*)buf;
 			if(be64toh(beacon->magic) != BCSBEACON_MAGIC) {
 				// log format is reversed for readability
@@ -460,7 +541,7 @@ start_bcast_scan:
 next_epevent:
 		__syscall(gettimeofday(&tv_now, NULL));
 		timersub(&tv_now, &tv_last, &tv_diff);
-		if(tv_diff.tv_sec >= 5) {
+		if(tv_diff.tv_sec >= BCAST_SCAN_TIMEOUT_SEC) {
 			ALOGI("Server scan finished\n");
 			break;
 		}
@@ -496,22 +577,19 @@ next_epevent:
 	
 	// connect to selected server
 	BCAST_SRV_UN *srv = (BCAST_SRV_UN*)(&(servers.array[idx - 1]));
-	struct sockaddr_in sin = {
-		  .sin_addr = srv->endpoint.addr
-		, .sin_port = srv->endpoint.port
-		, .sin_family = AF_INET
-	};
+	pfs.endpoint.sin_addr.s_addr = srv->endpoint.addr;
+	pfs.endpoint.sin_port = srv->endpoint.port;
+
 	lassert(inet_ntop(AF_INET, &(srv->endpoint.addr), addrstr, INET_ADDRSTRLEN) != NULL);
 	ALOGI("Connecting to %s:%hu\n", addrstr, ntohs(srv->endpoint.port));
 
 	VERBOSE ALOGV("Creating UDP socket... ");
-	int sock;
-	__syscall(sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+	__syscall(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 	struct timeval rcvtimeo = {
-		  .tv_sec = BCSRECV_TIMEO
-		, .tv_usec = 0
+		  .tv_sec = (BCSRECV_TIMEO / 1000)
+		, .tv_usec = (BCSRECV_TIMEO % 1000)
 	};
-	__syscall(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
+	__syscall(setsockopt(pfs.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
 	VERBOSE logprint("OK.\n");
 
 	VERBOSE ALOGV("Sending CONNECT... ");
@@ -522,16 +600,17 @@ next_epevent:
 	};
 	bcsproto_new_packet(&msg);
 	// TODO: use sendto2
-	sysassert(sendto(sock, &msg, sizeof(msg), 0, (struct sockaddr*)&sin, sizeof(sin)) == sizeof(msg));
+	sysassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
+		, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
 	VERBOSE logprint("OK.\n");
 
 	ssize_t rcvd;
 	struct sockaddr_in sin_src;
 	socklen_t src_alen = sizeof(sin_src);
 	while(true) {
-		__syscall(rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (struct sockaddr*)&sin_src, &src_alen));
-		if(    sin_src.sin_addr.s_addr != sin.sin_addr.s_addr
-			|| sin_src.sin_port        != sin.sin_port
+		__syscall(rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen));
+		if(    sin_src.sin_addr.s_addr != pfs.endpoint.sin_addr.s_addr
+			|| sin_src.sin_port        != pfs.endpoint.sin_port
 		) {
 			ALOGD("Source endpoint mismatch, skipping\n");
 			continue;
@@ -558,22 +637,19 @@ next_epevent:
 	VERBOSE ALOGD("Connecting to the TCP socket... ");
 	int sock_tcp;
 	__syscall(sock_tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-	__syscall(connect(sock_tcp, (struct sockaddr*)&sin, sizeof(sin)));
+	__syscall(connect(sock_tcp, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)));
 	VERBOSE logprint("OK.\n");
 
-	BCSMAP map = {
-		.map_primitives = NULL
-	};
 	VERBOSE ALOGV("Receiving map params... ");
-	__syscall(recv(sock_tcp, &map, 4, MSG_WAITALL)); // FIXME: magic const 4 is a sizeof (w+h)
-	map.width = be16toh(map.width);
-	map.height = be16toh(map.height);
-	VERBOSE logprint("%hux%hu\n", map.width, map.height);
+	__syscall(recv(sock_tcp, &pfs.map, 4, MSG_WAITALL)); // FIXME: magic const 4 is a sizeof (w+h)
+	pfs.map.width = be16toh(pfs.map.width);
+	pfs.map.height = be16toh(pfs.map.height);
+	VERBOSE logprint("%hux%hu\n", pfs.map.width, pfs.map.height);
 
-	ssize_t size_in_bytes = map.width * map.height;
-	map.map_primitives = (uint8_t*)malloc(size_in_bytes);
+	ssize_t size_in_bytes = pfs.map.width * pfs.map.height;
+	pfs.map.map_primitives = (uint8_t*)malloc(size_in_bytes);
 	VERBOSE ALOGV("Receiving map data... ");
-	__syscall(recv(sock_tcp, map.map_primitives, size_in_bytes, MSG_WAITALL));
+	__syscall(recv(sock_tcp, pfs.map.map_primitives, size_in_bytes, MSG_WAITALL));
 	VERBOSE logprint("%lu bytes OK.\n", size_in_bytes);
 
 	close(sock_tcp);
@@ -581,14 +657,38 @@ next_epevent:
 	msg.action = htobe32(BCSACTION_CONNECT2);
 	bcsproto_new_packet(&msg);
 	VERBOSE ALOGV("Sending CONNECT2... ");
-	sysassert(sendto(sock, &msg, sizeof(msg), 0, (struct sockaddr*)&sin, sizeof(sin)) == sizeof(msg));
+	sysassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
+		, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
+	while(true) {
+		__syscall(rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen));
+		if(    sin_src.sin_addr.s_addr != pfs.endpoint.sin_addr.s_addr
+			|| sin_src.sin_port        != pfs.endpoint.sin_port
+		) {
+			ALOGD("Source endpoint mismatch, skipping\n");
+			continue;
+		}
+
+		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
+		if(repl->packet_no != msg.packet_no) {
+			ALOGD("Packet no mismatch (sent %u, got %u), skipping\n"
+				, be32toh(msg.packet_no), be32toh(repl->packet_no));
+			continue;
+		}
+
+		if(be32toh(repl->type) != BCSREPLT_ACK) {
+			ALOGD("Reply type mismatch (expecting %u, got %u), skipping\n"
+				, BCSREPLT_MAP, be32toh(repl->type));
+			continue;
+		}
+
+		// if we are there: source matches, packet no and reply type too
+		break;
+	}
 	VERBOSE logprint("OK.\n");
 
 	// прелюдия закончена, мы должны быть на сервере.
-
-	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	pthread_mutex_t mutex_frame = PTHREAD_MUTEX_INITIALIZER;
-	srand(time(NULL));
+	// перенаправляем лог в файл
+	sysassert(freopen("cs_client.log", "w", stderr) != NULL);
 
 	// NCurses
 	nassert(initscr());
@@ -611,34 +711,16 @@ next_epevent:
 	int wnd_ymax, wnd_xmax;
 	getmaxyx(stdscr, wnd_ymax, wnd_xmax);
 
-	WINDOW *below;
-	nassert(below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
-	nassert(wbkgd(below, COLOR_PAIR(CPAIR_DEFAULT)));
-	below->_clear = true;
+	nassert(pfs.below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
+	nassert(wbkgd(pfs.below, COLOR_PAIR(CPAIR_DEFAULT)));
+	pfs.below->_clear = true;
 
-	BCSCLIENT_PUBLIC stpb = {
-		  .direction = BCSDIR_UP
-		, .position = { .x = 0, .y = 0 }
-		, .state = BCSCLST_CONNECTED
-	};
-
-	FPSTHREAD prm = {
-		  .map = &map
-		, .mutex_data = &mutex
-		, .mutex_frame = &mutex_frame
-		, .ticks = 0
-		, .delay_val = 0
-		, .below = below
-		, .mappad = NULL
-		, .state_public = &stpb
-	};
-
-	init_map(&prm.mappad, &map);
+	init_map(&pfs.mappad, &pfs.map);
 
 	// запуск таймера
 	struct sigevent sgv = {
 		  .sigev_notify = SIGEV_THREAD
-		, .sigev_value = { .sival_ptr = &prm }
+		, .sigev_value = { .sival_ptr = &pfs }
 		, .sigev_signo = SIGALRM
 		, .sigev_notify_function = timer_detonate
         , .sigev_notify_attributes = 0
@@ -656,7 +738,7 @@ next_epevent:
 		/////////////////////////
 		//      ОТРИСОВКА      //
 		/////////////////////////
-		draw_window(&prm);
+		draw_window(&pfs);
 
 		/////////////////////////
 		//         ВВОД        //
@@ -670,20 +752,36 @@ next_epevent:
 
 			case 0x3: // Ctrl+C
 			case KEY_F(10): // F10
+				do_action(&pfs, BCSACTION_DISCONNECT, BCSDIR_UNDEF);
 				goto loop_leave;
 
-			case KEY_LEFT: break;
-			case KEY_RIGHT: break;
+			case 'a':
+			case 'A':
+			case KEY_LEFT:  do_action(&pfs, BCSACTION_MOVE,   BCSDIR_LEFT);  break;
 
-			case KEY_UP: break;
-			case KEY_DOWN: break;
+			case 'd':
+			case 'D':
+			case KEY_RIGHT: do_action(&pfs, BCSACTION_MOVE,   BCSDIR_RIGHT); break;
+
+			case 'w':
+			case 'W':
+			case KEY_UP:    do_action(&pfs, BCSACTION_MOVE,   BCSDIR_UP);    break;
+
+			case 's':
+			case 'S':
+			case KEY_DOWN:  do_action(&pfs, BCSACTION_MOVE,   BCSDIR_DOWN);  break;
+
+			case 'q':
+			case 'Q':       do_action(&pfs, BCSACTION_ROTATE, BCSDIR_LEFT);  break;
+
+			case 'e':
+			case 'E':       do_action(&pfs, BCSACTION_ROTATE, BCSDIR_RIGHT); break;
+
+			case ' ':       do_action(&pfs, BCSACTION_FIRE,   BCSDIR_UNDEF); break;
 
 			default: break;
 		}
 		//pthread_mutex_unlock(&mutex);
-		++prm.ticks;
-		below->_clear = true;
-		stdscr->_clear = true;
 	}
 
 loop_leave:

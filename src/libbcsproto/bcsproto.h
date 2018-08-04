@@ -22,6 +22,7 @@
 //   be16toh(), be32toh(), be64toh()             //
 ///////////////////////////////////////////////////
 
+#define BCSPROTO_VERSION 0x00000001
 #define BCSBEACON_MAGIC 0x1324214277da7aff
 #define BCSBEACON_DESCRLEN 45
 #define BCSSERVER_DEFAULT_PORT 2018
@@ -47,7 +48,7 @@ typedef struct __point {
 } __attribute__((packed)) POINT;
 
 typedef enum __bcsaction {
-	  BCSACTION_CONNECT // params: nickname: TODO
+	  BCSACTION_CONNECT // params: version (4 bytes), nickname
 	, BCSACTION_CONNECT2 // noparams
 	, BCSACTION_DISCONNECT // noparams
 // move without rotation
@@ -62,7 +63,12 @@ typedef enum __bcsaction {
 } BCSACTION;
 
 typedef enum __bcsdir {
-	  BCSDIR_LEFT
+// some actions doesn't have direction, but what if I
+// want to be strict and disallow all unexistent directions
+// except for L, R, U, D?
+// Solution: use `BCSDIR_LEFT' where direction does not matter.
+//	  BCSDIR_UNDEF
+	  BCSDIR_LEFT, BCSDIR_UNDEF = BCSDIR_LEFT
 	, BCSDIR_RIGHT
 	, BCSDIR_UP
 	, BCSDIR_DOWN
@@ -103,20 +109,21 @@ typedef struct __bcsclient_info_public {
 	BCSCLST state;
 	POINT position;
 	BCSDIRECTION direction;
-} BCSCLIENT_PUBLIC;
+} __attribute__((packed)) BCSCLIENT_PUBLIC;
 
 typedef struct __bcsclient_info_public_ext {
 	uint16_t frags;
 	uint16_t deaths;
 	char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
-} BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
+} __attribute__((packed)) BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
 
 typedef struct __bcsclient_info_private {
 	struct sockaddr_in endpoint;
 	struct timeval time_last_fire;
 	struct timeval time_last_dgram;
-} BCSCLIENT_PRIVATE;
+} __attribute__((packed)) BCSCLIENT_PRIVATE;
 
+// TODO: extract fields directly into struct?
 typedef struct {
 	BCSCLIENT_PUBLIC public_info;
 	BCSCLIENT_PUBLIC_EXT public_ext_info;
@@ -188,3 +195,4 @@ extern ssize_t sendto2(
 // or return -1 if it's impossible.
 // In this condition, actual read count is returned into n
 //extern ssize_t recv4(int fd, void *buf, size_t *n, int flags);
+// UPD 03.08.2018: this is already can be done by recv() with MSG_WAITALL flag

@@ -34,7 +34,7 @@ $(SUBDIRS): subdirs
 
 last-config:
 	echo [i] Compiler is $(CC), linker is $(LD), configuration is $(CONFIGURATION) | tee "$(ROOTDIR)/make.config.now"
-	test -f "$(ROOTDIR)/make.config.prev" && diff -N "$(ROOTDIR)/make.config.prev" "$(ROOTDIR)/make.config.now" > /dev/null 2> /dev/null \
+	(! test -f "$(ROOTDIR)/make.config.prev") || diff -N "$(ROOTDIR)/make.config.prev" "$(ROOTDIR)/make.config.now" > /dev/null 2> /dev/null \
 	|| ( echo -e "\e[33mConfiguration changed (code $$?), running clean\e[0m" ; $(MAKE) -rR clean )
 	cp -f "$(ROOTDIR)/make.config.now" "$(ROOTDIR)/make.config.prev"
 
