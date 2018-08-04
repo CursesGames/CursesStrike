@@ -41,6 +41,7 @@ int mvwaddattrfstr(WINDOW *wnd, int y, int x, int len, char *str, chtype attr) {
 	return 0; // OK
 }
 
+//возвращает 8-байтное число, в котором хранятся последние однобайтные символы с клавиатуры
 int64_t raw_wgetch(WINDOW *wnd) {
 	int c = wgetch(wnd);
 	//nassert(c);

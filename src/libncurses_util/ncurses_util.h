@@ -10,6 +10,7 @@
 // https://www.guyrutenberg.com/2008/12/20/expanding-macros-into-string-constants-in-c
 
 #ifndef _MSC_VER
+//assert for any types
 #define nassert(x)                                                            \
     {                                                                         \
         __typeof(x) y = (x);                                                  \
@@ -54,7 +55,13 @@ enum raw_keys {
 };
 #pragma GCC diagnostic warning "-Wpedantic"
 
+//print error into stdout and stderr in form:
+//[x] ncurses err: '<x>' at <file>: line
+//calls endwin() and exit()
 bool ncurses_raise_error(const char *x, const char *file, int line);
+//create chtype string from char string with:
 chtype *create_chstr(char *str, int len, chtype attr);
+// move, add attributed string with fixed length:
 int mvwaddattrfstr(WINDOW *wnd, int y, int x, int len, char *str, chtype attr);
+// read from keyboard with long key codes
 int64_t raw_wgetch(WINDOW *wnd);

@@ -51,19 +51,23 @@
 // output
 #define logprint(...) fprintf(stderr, __VA_ARGS__)
 
-// Android-like logging
+// Android-like logging with colors
+//Errors:
 #define ALOGE(...) logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST " " __VA_ARGS__)
+//Warnings:
 #define ALOGW(...) logprint(ANSI_BKGRD_YELLOW ANSI_COLOR_BLACK "[!]" ANSI_CLRST " " __VA_ARGS__)
+//Information:
 #define ALOGI(...) logprint(ANSI_BKGRD_GREEN ANSI_COLOR_BLACK "[i]" ANSI_CLRST " " __VA_ARGS__)
 #define ALOGD(...) logprint(ANSI_BKGRD_CYAN ANSI_COLOR_BLACK "[D]" ANSI_CLRST " " __VA_ARGS__)
+//Verbose
 #define ALOGV(...) logprint(ANSI_BKGRD_WHITE ANSI_COLOR_BLACK "[V]" ANSI_CLRST " " __VA_ARGS__)
 
 // assert (release-time)
-// мягкая проверка условия. напечатает ошибку, но выполнение не прервётся
+// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ. пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 #define lassert(x) (void)((!!(x)) || syscall_print_error(#x, __FILE__, __LINE__, 0))
-// жёсткая проверка условия. напечатает ошибку и развалит программу через abort()
+// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ. пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ abort()
 #define sysassert(x) (void)((!!(x)) || syscall_error(#x, __FILE__, __LINE__))
-// жёсткая проверка условия, как и выше, ориентированная на системные вызовы
+// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 #define __syscall(x) sysassert((x) != -1)
 
 // debug
@@ -71,5 +75,7 @@ extern bool verbose;
 #define VERBOSE if(verbose)
 
 // exported functions
+//call syscall_print_error, calls abort() and if there is ncurses calls andwin():
 extern int syscall_error(const char *x, const char *file, int line);
+//print error string from err_no into stderr
 extern int syscall_print_error(const char *x, const char *file, int line, int err_no);

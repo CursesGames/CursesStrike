@@ -4,13 +4,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+//количество каналов в rgb
 #define RGB_NUM 3
 
 typedef uint8_t  BYTE;
+typedef uint16_t WORD;
 typedef uint32_t DWORD;
 typedef int32_t  LONG;
-typedef uint16_t WORD;
 
+//header of bmp file
 typedef struct {
     WORD  bfType;
     DWORD bfSize;
@@ -33,18 +35,21 @@ typedef struct {
     DWORD  biClrImportant; 
 } __attribute__((__packed__)) bmp_info_header_t;
 
+//color channels
 typedef struct {
     BYTE  rgbtBlue;
     BYTE  rgbtGreen;
     BYTE  rgbtRed;
 } __attribute__((__packed__)) rgb_triple_t;
 
+//map structure
 typedef struct __map_t {
-    uint16_t width;                 // ширина карты - по горизонтали - количество столбцов
-    uint16_t height;                // высота карты - по вертикали - количество строк
-    uint8_t *map_primitives;
+    uint16_t width;                 // horisontal size - count of columns
+    uint16_t height;                // vertical size - count of lines
+    uint8_t *map_primitives;        // 1D array of primitives width*height
 } __attribute__((packed)) BCSMAP;
 
+//colors of items on the map
 enum {
     COLOR_ROCK = 0x000000,       // black color
     COLOR_WATER = 0xFF,          // blue color
@@ -52,6 +57,7 @@ enum {
     COLOR_OPEN_SPACE = 0xFFFFFF  // white color
 };
 
+//list of map primitives
 typedef enum {
     PUNIT_ROCK = 'r',       // black color
     PUNIT_WATER = 'w',      // blue color
@@ -60,12 +66,15 @@ typedef enum {
 } __attribute__((packed)) BCSMAPPRIMITIVE;
 
 // загрузить из bmp, результат конвертации в памяти
+//load from bmp
 bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map); 
 
 // загрузить из bcsmap в память
+//load from bcsmap to memory
 bool bcsmap_load(const char *filename, BCSMAP *map); 
 
 // сохранить из памяти в bcsmap
+//save to bcsmap from memory
 bool bcsmap_save(const char *filename, BCSMAP *map); 
 
 #endif

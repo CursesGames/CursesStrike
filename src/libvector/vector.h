@@ -20,15 +20,22 @@ typedef uint64_t __vector_val_t;
 // A simple array-like collection with ability to grow, containing (by default) pointer-size integers
 typedef struct __vector {
 	__vector_val_t *array;
+//count of items:
 	size_t size;
+//count of free places for items:
 	size_t capacity;
+//hom many new place vector allocate if size >= capacity:
 	uint32_t _growth_factor; 
 } VECTOR;
 
 bool vector_init(VECTOR *vect, size_t initial_capacity);
 // Pushes `value' to the end of vector. Value is _copied_.
 bool vector_push_back(VECTOR *vect, __vector_val_t value);
+// returns value from the end of vector and decrement size
 bool vector_pop_back(VECTOR *vect, __vector_val_t *out_value);
+//cut unoccupied memory
 bool vector_shrink_to_fit(VECTOR *vect);
+//just returns pointer to array of items
 __vector_val_t *vector_array_ptr(VECTOR *vect);
+//free memory without zeroing out size and capacity
 void vector_free(VECTOR *vect);
