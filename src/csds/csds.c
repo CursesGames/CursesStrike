@@ -182,12 +182,17 @@ void *send_announces(void *arg) {
         cl_ptr = clients; //beginning of array clients
 
         if(player_count != 0){
-            for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) { //send to all clients
-                if((*cl_ptr).private_info.endpoint.sin_addr.s_addr != 0) {// if clients[i] is not NULL
+            for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) {
+                if((((*cl_ptr).public_info.state == BCSCLST_CONNECTED) //send to active player
+                || ((*cl_ptr).public_info.state == BCSCLST_PLAYING)
+                || ((*cl_ptr).public_info.state == BCSCLST_RESPAWNING))
+                && ((*cl_ptr).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)) {// if clients[i] is not NULL
                     *array = cl_ptr->public_info; //0 element - client-receiver public_info
                     array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
-                    for(j = 0; j < player_count; j++, array++) { //other clients public_info
-                        if((j != i) && ((*(cl_ptr + j)).private_info.endpoint.sin_addr.s_addr) != 0){ //do not include client-receiver and NULL clients
+                    for(j = 0; j < player_count; j++, array++) { //other clients with not error state public_info
+                        if((j != i) //do not include client-receiver and NULL clients
+                        && ((*cl_ptr).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)
+                        && ((*cl_ptr).public_info.state != BCSCLST_UNDEF)){ 
                             *array = (cl_ptr + j)->public_info;
                         }
                     }
@@ -196,6 +201,7 @@ void *send_announces(void *arg) {
                 __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) (void *)(&(cl_ptr->private_info.endpoint)), addr_size));
             }
         }
+        usleep(33333);
     }
     // Unreachable code
     // It will be neccessary before servers abnornal termination
