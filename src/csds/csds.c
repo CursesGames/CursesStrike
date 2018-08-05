@@ -73,7 +73,7 @@ int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
     return t_fd;
 }
 
-// Thread function - udp server port number and address broadcast
+// Thread[0] function - udp server port number and address broadcast
 void *send_broadcast (void *arg) {
     struct sockaddr_in udp_address = *((struct sockaddr_in *)arg);
     struct ifaddrs *ifaddr;
@@ -129,6 +129,7 @@ next_iface:
     //pthread_exit (NULL);
 }
 
+/* Return current number of clients */
 int return_clients_size(BCSCLIENT *clients) {
     int i;
     int num = 0;
@@ -143,7 +144,8 @@ int return_clients_size(BCSCLIENT *clients) {
     return num;
 }
 
-void send_announces(void *arg) {
+/* Thread[1] function - send announces to clients */
+void *send_announces(void *arg) {
     BCSCLIENT *clients = ((BCSCLIENT *)arg);
     BCSCLIENT *cl_ptr;
     BCSMSGREPLY *repl;
@@ -178,17 +180,18 @@ void send_announces(void *arg) {
         array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //beginning of BCSCLIENT_PUBLIC
         cl_ptr = clients; //beginning of array clients
 
-        for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) {
+        for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) { //send to all clients
             if(cl_ptr->public_info.state != 0) {// if clients[i] is not NULL
                 *array = cl_ptr->public_info; //0 element - client-receiver public_info
                 array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
                 for(j = 0; j < player_count; j++, array++) { //other clients public_info
-                    if(j != i){ //do not include client-receiver
+                    if((j != i) && ((cl_ptr + j)->public_info.state != 0)){ //do not include client-receiver and NULL clients
                         *array = (cl_ptr + j)->public_info;
                     }
                 }
             }
-            __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) &(cl_ptr->private_info.endpoint), addr_size));
+            // warning! the pointer to member of packed structure!!!
+            __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) (void *)(&(cl_ptr->private_info.endpoint)), addr_size));
         }
     }
     // Unreachable code
