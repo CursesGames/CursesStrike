@@ -151,7 +151,7 @@ void *send_announces(void *arg) {
     BCSMSGREPLY *repl;
     BCSMSGANNOUNCE *ann;
     BCSCLIENT_PUBLIC *array;
-    struct sockaddr_in *addr_udp;
+    struct sockaddr_in addr_udp;
     socklen_t addr_size = sizeof(struct sockaddr_in);
     int player_count;
     int i, j;
@@ -161,16 +161,16 @@ void *send_announces(void *arg) {
     __syscall(fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 
     // Setting up port number and address
-    addr_udp->sin_family = AF_INET;
-    addr_udp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
-    addr_udp->sin_addr.s_addr = INADDR_ANY;
+    addr_udp.sin_family = AF_INET;
+    addr_udp.sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
+    addr_udp.sin_addr.s_addr = INADDR_ANY;
 
     // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
     int reuse_addr = 1;
     __syscall(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
-    __syscall(bind(fd, (struct sockaddr *)addr_udp, addr_size));
+    __syscall(bind(fd, (struct sockaddr *)&addr_udp, addr_size));
 
     while(1) {
         player_count = return_clients_size(clients);
