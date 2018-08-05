@@ -22,17 +22,23 @@
 //   be16toh(), be32toh(), be64toh()             //
 ///////////////////////////////////////////////////
 
-#define BCSPROTO_VERSION 0x00000001
-// beacon packet signature
+#define BCSPROTO_VERSION 0x00000101
 
+// beacon packet signature
 #define BCSBEACON_MAGIC 0x1324214277da7aff
 // длина человекочитаемого имени сервера без '\0':
 #define BCSBEACON_DESCRLEN 45
+
+// default server port, what's unclear?
 #define BCSSERVER_DEFAULT_PORT 2018
 
 // port for broadcast messages
 // broadcast to the same port as the game defaults to
 #define BCSSERVER_BCAST_PORT BCSSERVER_DEFAULT_PORT
+
+// max size of data structures for client list
+// this is define and not a variable for optimization
+#define BCSSERVER_MAXCLIENTS 16
 
 // from csds.c
 // maximum size of the buffer to receive a datagram
@@ -46,16 +52,15 @@
 
 // deprecated
 #define NICK_SIZE BCSPLAYER_NICKLEN
-//#define DEFAULT_PORT BCSSERVER_DEFAULT_PORT
+#define CLIENTS_NUM BCSSERVER_MAXCLIENTS
 
-// TODO: export symbols to manipulate protocol datagrams
 // structure for storing coordinates
 typedef struct __point {
 	uint16_t x;
 	uint16_t y;
 } __attribute__((packed)) POINT;
 
-// all possible actions that the client wants to accomplish
+// all possible actions that the client may request
 typedef enum __bcsaction {
 // "connect" to server and reserve slot
 	  BCSACTION_CONNECT // params: version (4 bytes), nickname
@@ -67,7 +72,6 @@ typedef enum __bcsaction {
 	, BCSACTION_MOVE // params: BCSDIRECTION
 // fire to the current direction
 	, BCSACTION_FIRE // noparams
-//	, BCSACTION_STRAFE // params: BCSDIRECTION
 // rotate around without move
 	, BCSACTION_ROTATE // params: BCSDIRECTION (только LEFT или RIGHT)
 // request statistics
@@ -76,18 +80,18 @@ typedef enum __bcsaction {
 
 // direction of the character's movement
 typedef enum __bcsdir {
+// what about BCSDIR_UNDEF?
 // some actions doesn't have direction, but what if I
 // want to be strict and disallow all unexistent directions
 // except for L, R, U, D?
 // Solution: use `BCSDIR_LEFT' where direction does not matter.
-//	  BCSDIR_UNDEF
 	  BCSDIR_LEFT, BCSDIR_UNDEF = BCSDIR_LEFT
 	, BCSDIR_RIGHT
 	, BCSDIR_UP
 	, BCSDIR_DOWN
 } BCSDIRECTION;
 
-// possible types of server's replies
+// possible types of server replies
 typedef enum __bcsreply_type {
 // на всякий случай
 	  BCSREPLT_NONE = 0
@@ -120,7 +124,7 @@ typedef enum __bcsreply_type {
 // possible states of client
 typedef enum __bcsclient_state {
 // error? initial state?
-	  BCSCLST_UNDEF
+	  BCSCLST_UNDEF, BCSCLST_STANDALONE = BCSCLST_UNDEF
 // registered on the server but downloading map, for ex. and don't receive announces
 	, BCSCLST_CONNECTING
 // receives announces but not playing, spectator mode
@@ -142,7 +146,7 @@ typedef struct __bcsclient_info_public {
 	BCSCLST state;
 	POINT position;
 	BCSDIRECTION direction;
-} __attribute__((packed)) BCSCLIENT_PUBLIC;
+} BCSCLIENT_PUBLIC;
 
 // public information about player, which is sent only on request
 // открытая информация об игроке, которая отсылается только по запросу
@@ -150,7 +154,7 @@ typedef struct __bcsclient_info_public_ext {
 	uint16_t frags;
 	uint16_t deaths;
 	char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
-} __attribute__((packed)) BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
+} BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
 
 // private information, only server know this
 // закрытая информация, которую о клиенте знает только сервер
@@ -162,11 +166,11 @@ typedef struct __bcsclient_info_private {
 	struct timeval time_last_fire;
 	// timestamp of last received datagram, to kick on connection drop
 	struct timeval time_last_dgram;
-} __attribute__((packed)) BCSCLIENT_PRIVATE;
+} BCSCLIENT_PRIVATE;
 
 // TODO: extract fields directly into struct?
-//all information about client
-//вся информация о клиенте
+// all information about client
+// вся информация о клиенте
 typedef struct {
 	BCSCLIENT_PUBLIC public_info;
 	BCSCLIENT_PUBLIC_EXT public_ext_info;
@@ -179,14 +183,14 @@ typedef union {
 		int32_t int_lo;
 		int32_t int_hi;
 	} ints;
-	uint8_t bytes[8]; // 
+	uint8_t bytes[8];
 } BCSMSGPARAM;
 
 // client's message
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
 // TODO: номер может переполниться, добавить обработку такой ситуации
-	int32_t packet_no;
+	uint32_t packet_no;
 // action that the client wants to do
 	BCSACTION action;
 // accurate to microseconds
@@ -199,7 +203,7 @@ typedef struct __bcsmsg {
 typedef struct __bcsmsg_reply {
 // number of packet from incoming message
 // из приходящего сообщения
-	int32_t packet_no;
+	uint32_t packet_no;
 // response type
 	BCS_REPLY_TYPE type;
 } BCSMSGREPLY;
@@ -212,7 +216,7 @@ typedef struct __bcsmsg_announce {
 // the very first element [0] is always the client that received the message
 // вся публичная информация о клиентах
 // самый первый элемeнт [0] всегда тот клиент, который получил сообщение
-	BCSCLIENT_PUBLIC *public_info;
+//	BCSCLIENT_PUBLIC *public_info;
 } BCSMSGANNOUNCE;
 
 // structure of the broadcast message from the server
@@ -248,7 +252,4 @@ extern ssize_t sendto2(
 );
 
 // read EXACTLY n bytes from TCP connection
-// or return -1 if it's impossible.
-// In this condition, actual read count is returned into n
-//extern ssize_t recv4(int fd, void *buf, size_t *n, int flags);
 // UPD 03.08.2018: this is already can be done by recv() with MSG_WAITALL flag

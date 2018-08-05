@@ -38,7 +38,7 @@ typedef union sigval sigval_t;
 typedef struct sockaddr_in sockaddr_in;
 typedef struct sockaddr sockaddr;
 
-// taken from Bionicle Commander: https://github.com/Str1ker17/EltexLearning/blob/aa2fddc/src/bc/bc.c#L56
+// taken from Bionicle Commander
 typedef enum {
 // white-on-black default terminal scheme
 	  CPAIR_DEFAULT = 1
@@ -82,18 +82,6 @@ typedef union __bcast_srv_ep {
 
 typedef BCSBEACON BCAST_SRV;
 
-/*typedef struct {
-	pthread_mutex_t *mutex_data;
-	pthread_mutex_t *mutex_frame;
-	pthread_mutex_t *mutex_sock;
-	BCSMAP *map;
-	WINDOW *mappad;
-	BCSCLIENT_PUBLIC *state_public;
-	WINDOW *below;
-	size_t ticks;
-	int32_t delay_val;
-} FPSTHREAD;*/
-
 // I don't bother with packing of this structure now
 typedef struct {
 	BCSCLIENT_PUBLIC self;
@@ -112,13 +100,6 @@ typedef struct {
 	WINDOW *below;
 	size_t frames;
 } BCSPLAYER_FULL_STATE;
-
-/*typedef struct {
-	pthread_mutex_t *mutex_sock;
-	BCSCLIENT_PUBLIC *state_public;
-	struct __endpoint server_endpoint;
-	int sockfd;
-} RCVTHREAD;*/
 
 // Создаёт вектор интерфейсов. Вектор должен быть неинициализированным
 size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
@@ -167,11 +148,11 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 }
 
 void *receiver_func(void *argv) {
-	BCSPLAYER_FULL_STATE *prm = (BCSPLAYER_FULL_STATE*)argv;
-	int sock = prm->sockfd;
+	BCSPLAYER_FULL_STATE *pfs = (BCSPLAYER_FULL_STATE*)argv;
+	int sock = pfs->sockfd;
 	struct __endpoint server = {
-		  .addr = prm->endpoint.sin_addr.s_addr
-		, .port = prm->endpoint.sin_port
+		  .addr = pfs->endpoint.sin_addr.s_addr
+		, .port = pfs->endpoint.sin_port
 		, .zero = 0
 	};
 	struct sockaddr_in src;
@@ -189,6 +170,8 @@ void *receiver_func(void *argv) {
 			continue;
 		}
 
+		// на время обработки принятого сообщения блокируем состояние
+		pthread_mutex_lock(&pfs->mutex_self);
 		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
 		switch(be32toh(repl->type)) {
 			case BCSREPLT_ANNOUNCE:
@@ -213,13 +196,14 @@ void *receiver_func(void *argv) {
 			break;
 
 			case BCSREPLT_STATS:
+				ALOGI("Received stats\n");
 			break;
 
 			case BCSREPLT_NONE: 
-			default:
 				ALOGW("Server sent message of type = %u, do nothing\n", be32toh(repl->type));
 			break;
 		}
+		pthread_mutex_unlock(&pfs->mutex_self);
 
 	}
 
@@ -283,10 +267,6 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
 	//fclose(f);
 }
 
-void draw_map(WINDOW *pad, BCSMAP *map) {
-	
-}
-
 void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 	BCSMSG msg = {
 		  .action = htobe32(action)
@@ -317,45 +297,44 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 	sendto2(pfs->sockfd, &msg, sizeof(msg), 0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
 }
 
-void draw_window(BCSPLAYER_FULL_STATE *prm) {
-	pthread_mutex_lock(&prm->mutex_frame);
+void draw_window(BCSPLAYER_FULL_STATE *pfs) {
+	pthread_mutex_lock(&pfs->mutex_frame);
     
     int w, h;
 	getmaxyx(stdscr, h, w);
 
-	// what to do there?
-    //if(stdscr->_clear) {
-	//	stdscr->_clear = false;
-	//}
-
-	//if(prm->below->_clear) {
-	//prm->below->_clear = false;
-	nassert(werase(prm->below));
-	pthread_mutex_lock(&prm->mutex_self);
-	mvwprintw(prm->below, 0, 1, "Frames: %zu", ++prm->frames);
-	pthread_mutex_unlock(&prm->mutex_self);
-	//}
-
 	nassert(werase(stdscr));
 	nassert(wnoutrefresh(stdscr));
+
+	// блокируем этот мьютекс только в случае чтения изменяющихся данных или записи изменений
+	pthread_mutex_lock(&pfs->mutex_self);
+	size_t frames = ++pfs->frames;
+	BCSCLIENT_PUBLIC self = pfs->self;
+	WINDOW *mappad = pfs->mappad;
+	WINDOW *below = pfs->below;
+	pthread_mutex_unlock(&pfs->mutex_self);
+
 	// copy a part of pad
 	// первые два параметра - верхний левый угол pad, с которого берём
 	// следующие четыре - куда на экран проецируем
-    nassert(pnoutrefresh(prm->mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+    nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// draw player
-	nassert(wmove(stdscr, prm->self.position.y, prm->self.position.x));
+	nassert(wmove(stdscr, self.position.y, self.position.x));
 	wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-	winsch(stdscr, dirchar[prm->self.direction]);
+	winsch(stdscr, dirchar[self.direction]);
 	wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	nassert(wnoutrefresh(stdscr));
 
 	// эта панелька наложится поверх карты
-	nassert(wnoutrefresh(prm->below));
+	nassert(werase(below));
+	mvwprintw(below, 0, 1, "Frames: %zu", frames);
+	nassert(wnoutrefresh(below));
+
 	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
 	// порисовали и хватит
-	pthread_mutex_unlock(&prm->mutex_frame);
+	pthread_mutex_unlock(&pfs->mutex_frame);
 }
 
 void timer_detonate(sigval_t argv) {
@@ -718,7 +697,7 @@ next_epevent:
 	init_map(&pfs.mappad, &pfs.map);
 
 	// запуск таймера
-	struct sigevent sgv = {
+	/*struct sigevent sgv = {
 		  .sigev_notify = SIGEV_THREAD
 		, .sigev_value = { .sival_ptr = &pfs }
 		, .sigev_signo = SIGALRM
@@ -732,7 +711,7 @@ next_epevent:
 		  .it_interval = { .tv_sec = 0, .tv_nsec = 33333333 }
 		, .it_value    = { .tv_sec = 0, .tv_nsec = 33333333 }
 	};
-	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));
+	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));*/
 
 	while(true) {
 		/////////////////////////
@@ -744,7 +723,6 @@ next_epevent:
 		//         ВВОД        //
 		/////////////////////////
 		int64_t key = raw_wgetch(stdscr);
-		//pthread_mutex_lock(&mutex);
 		switch(key) {
 			/////////////////////////
 			//       ОБРАБОТКА     //
@@ -781,7 +759,6 @@ next_epevent:
 
 			default: break;
 		}
-		//pthread_mutex_unlock(&mutex);
 	}
 
 loop_leave:

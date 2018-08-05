@@ -24,7 +24,7 @@ ssize_t sendto2(
 	__syscall(ioctl(fd, FIONBIO, &nb_yes, sizeof(nb_yes)));
 
 	sendto(fd, buf, n, flags, addr, addr_len);
-	lassert(errno == EWOULDBLOCK);
+	lassert(errno == 0 || errno == EWOULDBLOCK);
 
 	__syscall(ioctl(fd, FIONBIO, &nb_no, sizeof(nb_no)));
 	return sendto(fd, buf, n, flags, addr, addr_len);

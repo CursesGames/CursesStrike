@@ -1,6 +1,9 @@
 #ifndef __BCSMAP_H_
 #define __BCSMAP_H_ 
 
+// Note: this include is a beta feature for design- and compile-time
+#include "../liblinux_util/mscfix.h"
+
 #include <stdint.h>
 #include <stdbool.h>
 
