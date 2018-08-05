@@ -1,291 +1,205 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include <unistd.h>
+#include <alloca.h>
+#include <pthread.h>
+
 #include <sys/types.h>
 #include <sys/epoll.h>
+
 #include <ifaddrs.h>
-#include <linux/if_link.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <string.h>
+#include <netinet/in.h>
+
+#include <sys/socket.h>
 #include <sys/time.h>
+#include <linux/limits.h>
+#include <linux/if_link.h>
+
 // support Big Endian systems as MIPS
 #include <endian.h>
-#include <alloca.h>
 
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsstatemachine/bcsstatemachine.h"
-#include <linux/limits.h>
 
 // listen backlog size of TCP socket
 #define LISTEN_NUM 16
 // max bcast ifaces
 #define BC_FD_NUM 5
 
-//Data for broadcast
-struct bc_data{
+// Str1ker, 06.08.2018: I think we don't need epoll anymore.
+// There are 3 socket groups: TCP, UDP main, UDP broadcast
+// So an application of 5 threads is the best choise.
+#define THREAD_UDP_MAIN 0
+#define THREAD_UDP_BCAST 1
+#define THREAD_TCP_MAP 2
+#define THREAD_UDP_ANNOUNCE 3
+
+// Data required for broadcast
+struct bc_data {
     int broadcast_fd;
-    struct sockaddr_in udp_bc_address;
+    struct sockaddr_in bc_addr;
 };
-
-// Data for thread[1]
-struct udp_data {
-    int fd;
-    BCSCLIENT *cl_array;
-};
-
-// Socket initialization and udp address binding
-int udp_bind(struct sockaddr_in *addr_udp, socklen_t addr_size) {
-    int u_fd;
-
-    // Initialize socket descriptor
-    __syscall(u_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
-
-    // Setting up port number and address
-    addr_udp->sin_family = AF_INET;
-    addr_udp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
-    addr_udp->sin_addr.s_addr = INADDR_ANY;
-
-    // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
-    int reuse_addr = 1;
-    __syscall(setsockopt(u_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
-
-    // Link address with socket descriptor
-    __syscall(bind(u_fd, (struct sockaddr *)addr_udp, addr_size));
-
-    return u_fd;
-}
-
-// Socket initialization and tcp address binding
-int tcp_bind(struct sockaddr_in *addr_tcp, socklen_t addr_size) {
-    int t_fd;
-
-    // Initialize socket descriptor
-    __syscall(t_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-
-    // Setting up port number and address
-    addr_tcp->sin_family = AF_INET;
-    addr_tcp->sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
-    addr_tcp->sin_addr.s_addr = INADDR_ANY;
-
-    // Link address with socket descriptor
-    __syscall(bind(t_fd, (struct sockaddr *)addr_tcp, addr_size));
-
-    // Run socket listenning
-    __syscall(listen(t_fd, LISTEN_NUM));
-
-    return t_fd;
-}
 
 // Thread[0] function - udp server port number and address broadcast
-void *send_broadcast (void *arg) {
-    struct sockaddr_in udp_address = *((struct sockaddr_in *)arg);
+void *send_broadcast(void *argv) {
     struct ifaddrs *ifaddr;
-    socklen_t addr_size = sizeof(struct sockaddr_in);
-    int n = 0, i;
-    const int val = 1;
-    struct bc_data bcs[BC_FD_NUM];
+    const int bc_enable = 1;
+	VECTOR ifaces;
+	lassert(vector_init(&ifaces, BC_FD_NUM));
 
     __syscall(getifaddrs(&ifaddr));
-    while(ifaddr != NULL && n < BC_FD_NUM) {
-        if(ifaddr->ifa_addr == NULL
+
+    while(ifaddr != NULL) {
+        if(
+		       ifaddr->ifa_addr == NULL
             || ifaddr->ifa_addr->sa_family != AF_INET
-            || !(ifaddr->ifa_flags & IFLA_BROADCAST))
+            || !(ifaddr->ifa_flags & IFLA_BROADCAST)
+	        || ((sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr == htobe32(INADDR_LOOPBACK)
+	    )
             goto next_iface;
 
-        if(((struct sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
-            // Initialize socket descriptor
-            __syscall(bcs[n].broadcast_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+        // Initialize socket descriptor
+		struct bc_data *iface = malloc(sizeof(struct bc_data));
+		int sock;
+    	__syscall(sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+		__syscall(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bc_enable, sizeof(bc_enable)));
 
-            // Setting up port number and address
-            bcs[n].udp_bc_address.sin_family = AF_INET;
-            bcs[n].udp_bc_address.sin_port = htobe16(BCSSERVER_BCAST_PORT);
-            bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr;
+        // Setting up port number and address
+		sockaddr_in sin = {
+			  .sin_addr.s_addr = ((sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr
+			, .sin_port = htobe16(BCSSERVER_BCAST_PORT)
+			, .sin_family = AF_INET
+		};
+		iface->broadcast_fd = sock;
+		iface->bc_addr = sin;
 
-            ALOGD("beacons will be sent to %s:%hu\n"
-		        , inet_ntoa(bcs[n].udp_bc_address.sin_addr), be16toh(bcs[n].udp_bc_address.sin_port));
+		__vector_val_t val = { .ptr = iface };
+		lassert(vector_push_back(&ifaces, val));
 
-            // Configure the socket to broadcast
-            setsockopt(bcs[n].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
-            n++;
-        }
+        ALOGD("Beacons will be sent to %s:%hu\n", inet_ntoa(sin.sin_addr), be16toh(sin.sin_port));
 
 next_iface:
         ifaddr = ifaddr->ifa_next;
     }
 
-    BCSBEACON to_send = {
+	lassert(vector_shrink_to_fit(&ifaces));
+
+    BCSBEACON beacon = {
           .magic = htobe64(BCSBEACON_MAGIC)
         , .port = htobe16(BCSSERVER_DEFAULT_PORT)
-        , .description = "Curses-Strike Server v0.1 by Sl1vo4ka"
+		, .proto_ver = htobe16(BCSPROTO_VERSION)
+        , .description = "Curses-Strike Server v0.2 by Sl1vo4ka"
     };
 
+	size_t n = ifaces.size;
+	__vector_val_t *array = vector_array_ptr(&ifaces);
     while(true) {
-        for(i = 0; i < n; i++){
-            __syscall(sendto(bcs[i].broadcast_fd, &to_send, sizeof(BCSBEACON), 0, 
-            (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
+        for(size_t i = 0; i < n; i++) {
+			struct bc_data *iface = array[i].ptr;
+            __syscall(sendto2(iface->broadcast_fd, &beacon, sizeof(BCSBEACON), 0, 
+				(sockaddr*)&(iface->bc_addr), sizeof(sockaddr_in)));
         }
+		// no spam, only one beacon per second
         sleep(1);
     }
 
     // Unreachable code
     // It would be neccessary in the case of abnormal server termination
-    //pthread_exit (NULL);
-}
-
-// Return current number of clients
-// With the introduction of special `count' variable
-// this function might become redundant
-int return_clients_size(BCSCLIENT *clients) {
-    int i;
-    int num = 0;
-
-    for (i = 0; i < CLIENTS_NUM; i++) {
-        if (clients->private_info.endpoint.sin_addr.s_addr != 0) {
-            num++;
-            clients++;
-        }
-    }
-
-    return num;
+	// ReSharper disable once CppUnreachableCode
+	for(size_t i = 0; i < ifaces.size; i++) {
+		free(ifaces.array[i].ptr);
+	}
+	vector_free(&ifaces);
+    return NULL;
 }
 
 /* Thread[1] function - send announces to clients */
-void *send_announces(void *arg) {
-    BCSCLIENT *clients = ((struct udp_data *)arg)->cl_array;
-    BCSCLIENT *cl_ptr;
-    BCSMSGREPLY *repl;
-    BCSMSGANNOUNCE *ann;
-    BCSCLIENT_PUBLIC *array;
-    struct sockaddr_in addr_udp;
-    socklen_t addr_size = sizeof(struct sockaddr_in);
-    int player_count;
-    int i, j;
-    int u_fd = (*((struct udp_data *)arg)).fd;
+void *send_announces(void *argv) {
+	// извлекаем полное состояние
+	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
 
-    while(1) {
-        player_count = return_clients_size(clients);
-        repl = alloca(sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count);
-        (*repl).type = BCSREPLT_ANNOUNCE;
-        ann = (BCSMSGANNOUNCE *)(repl + 1);
-        ann->count = player_count;
-        array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //beginning of BCSCLIENT_PUBLIC
-        cl_ptr = clients; //beginning of array clients
+	int u_fd = state->sock_u;
 
-        if(player_count != 0){
-            for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) {
-                if((((*cl_ptr).public_info.state == BCSCLST_CONNECTED) //send to active player
-                || ((*cl_ptr).public_info.state == BCSCLST_PLAYING)
-                || ((*cl_ptr).public_info.state == BCSCLST_RESPAWNING))
-                && ((*cl_ptr).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)) {// if clients[i] is not NULL
-                    *array = (*cl_ptr).public_info; //0 element - client-receiver public_info
-                    array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
-                    for(j = 0; j < player_count; j++, array++) { //other clients with not error state public_info
-                        if((j != i) //do not include client-receiver and NULL clients
-                        && ((*(cl_ptr + j)).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)
-                        && ((*(cl_ptr + j)).public_info.state != BCSCLST_UNDEF)){ 
-                            *array = (*(cl_ptr + j)).public_info;
-                        }
-                    }
+	// https://www.viva64.com/ru/w/v505/
+	// Do not call the alloca() function inside loops
+    BCSMSGREPLY *repl = alloca(
+		      sizeof(BCSMSGREPLY) 
+		    + sizeof(BCSMSGANNOUNCE) 
+		    + sizeof(BCSCLIENT_PUBLIC) * BCSSERVER_MAXCLIENTS
+	);
+    BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
+    BCSCLIENT_PUBLIC *array = (BCSCLIENT_PUBLIC*)(ann + 1);
+
+	repl->type = BCSREPLT_ANNOUNCE;
+
+    while(true) {
+		// берём снимок состояния и работаем над ним
+		// 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
+		// за это время другой поток может сделать с состоянием что-нибудь важное
+		pthread_mutex_lock(&state->mutex_self);
+        uint16_t player_count = state->player_count;
+		BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
+		memcpy(state_snap, state->client, sizeof(state->client));
+		++(state->frames);
+		pthread_mutex_unlock(&state->mutex_self);
+
+		if(player_count > 0) {
+			BCSCLIENT_PUBLIC *arr_ptr = array;
+			int n = 0;
+			// lookup all slots
+			// include only registered (non-empty slots)
+			// send to actively interacting
+            for(int i = 0; i < CLIENTS_NUM; i++) {
+				BCSCLIENT *cl_ptr = &state_snap[i];
+				// include only registered (non-empty slots), this slot is empty
+				if(cl_ptr->public_info.state == BCSCLST_STANDALONE)
+					continue;
+
+				// copy struct
+				*arr_ptr = cl_ptr->public_info;
+
+				++arr_ptr;
+				++n;
+			}
+			// должно сойтись
+			lassert(n == player_count);
+
+			ann->count = player_count;
+			size_t annlen =	  sizeof(BCSMSGREPLY)
+							+ sizeof(BCSMSGANNOUNCE) 
+							+ sizeof(BCSCLIENT_PUBLIC) * player_count;
+			// для прикола проштампуем пакет
+			bcsproto_new_packet((BCSMSG*)repl);
+			n = 0;
+			// lookup all slots
+            for(int i = 0; i < CLIENTS_NUM; i++) {
+				BCSCLIENT *cl_ptr = &state->client[i];
+				// assume that state machine is OK
+				// and none of these states possible without good endpoint
+				// send to actively interacting
+                if(
+		               cl_ptr->public_info.state == BCSCLST_CONNECTED
+					|| cl_ptr->public_info.state == BCSCLST_PLAYING
+					|| cl_ptr->public_info.state == BCSCLST_RESPAWNING
+                ) { // if clients[i] is not NULL
+                    ann->index_self = n;
+					sendto(u_fd, repl, annlen, 0
+		                , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in));
+					++n;
                 }
-                // warning! the pointer to member of packed structure!!!
-                __syscall(sendto(u_fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) &((*cl_ptr).private_info.endpoint), addr_size));
             }
         }
         usleep(33333);
     }
     // Unreachable code
     // It will be neccessary before servers abnornal termination
-    //pthread_exit (NULL);
-}
-
-// Player coordinates assignment
-void init_start_xy (BCSMAP *map, uint16_t start_x, uint16_t start_y) {
-    int i, j;
-
-    for (i = 0; i < map->height; i++) {
-        for (j = 0; j < map->width; j++) {
-            if (map->map_primitives[i * map->width + j] == 0) {
-                start_y = i; //y-coordinate
-                start_x = j; //x-coordinate
-                map->map_primitives[i * map->width + j] = 1;
-                return;
-            }
-        }
-    }
-}
-
-// Put client data into array
-int add_client (BCSMAP *map, BCSCLIENT *clients, struct sockaddr_in addr_client){
-    struct timeval tv;
-    int i;
-
-    for(i = 0; i < CLIENTS_NUM; i++){
-        if(clients[i].private_info.endpoint.sin_addr.s_addr == 0){
-            clients[i].private_info.endpoint = addr_client; //client endpoint
-            __syscall(gettimeofday(&(clients[i].private_info.time_last_dgram), NULL)); //set current time as the last response time
-            init_start_xy(map, clients[i].public_info.position.x, clients[i].public_info.position.y); //init coordinates
-            clients[i].public_info.state = BCSCLST_CONNECTING; //init state = wait for map
-            clients[i].public_info.direction = BCSDIR_UP; //init direction
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-// Search client data in array, returns index of element 
-int search_client(BCSCLIENT *clients, struct sockaddr_in addr_client) {
-    int i;
-    int num;
-
-    // If endpoint is the same as addr_client
-    for (i = 0; i < CLIENTS_NUM; i++) {
-        if ((clients[i].private_info.endpoint.sin_addr.s_addr == 0) && 
-            (clients[i].private_info.endpoint.sin_port == addr_client.sin_port) && 
-            (clients[i].private_info.endpoint.sin_family == addr_client.sin_family)) {
-            num = i;
-            return num;
-        }
-    }
-
-    return -1;
-}
-
-
-// Remove client from array
-void delete_client (BCSCLIENT *clients, struct sockaddr_in addr_client) {
-    int num;
-
-    num = search_client(clients, addr_client);
-    memset(clients + num*sizeof(BCSCLIENT), 0, sizeof(BCSCLIENT));
-}
-
-void log_print_cl_info(BCSCLIENT *clients){
-    int i;
-
-    for(i = 0; i < CLIENTS_NUM; i++){
-        if(clients[i].private_info.endpoint.sin_addr.s_addr != 0){
-            ALOGD("CLIENT %d\n", i);
-            //public info 
-            ALOGD("state: %d\n", clients[i].public_info.state);
-            ALOGD("position: x = %u, y = %u\n", (unsigned int)clients[i].public_info.position.x, (unsigned int)clients[i].public_info.position.y);
-            ALOGI("direction: %d\n", clients[i].public_info.direction);
-            //public ext info
-            ALOGI("frags: %u\n", (unsigned int)(clients[i].public_ext_info.frags));
-            ALOGI("deaths: %u\n", (unsigned int)(clients[i].public_ext_info.deaths));
-            ALOGI("deaths: %s\n", clients[i].public_ext_info.nickname);
-            //private info
-            ALOGI("endpoint : family = %d, port = %d, address = %s\n", clients[i].private_info.endpoint.sin_family, clients[i].private_info.endpoint.sin_port, inet_ntoa(clients[i].private_info.endpoint.sin_addr));
-            ALOGI("last fire time: %ld.%06ld\n", clients[i].private_info.time_last_fire.tv_sec, clients[i].private_info.time_last_fire.tv_usec);
-            ALOGI("last dgram time: %ld.%06ld\n", clients[i].private_info.time_last_dgram.tv_sec, clients[i].private_info.time_last_dgram.tv_usec);
-        }
-
-    }
+	// ReSharper disable once CppUnreachableCode
+    return NULL;
 }
 
 void *serve_map(void *argv) {
@@ -347,6 +261,11 @@ void *state_machine(void *argv) {
 		sa_len = sizeof(addr_client);
 		ssize_t rcvd;
         __syscall(rcvd = recvfrom(u_fd, &cl_msg, BCSDGRAM_MAX, 0, (sockaddr*)&addr_client, &sa_len));
+
+		// ignore beacons
+		if(rcvd >= 8 && be64toh(*(uint64_t*)cl_msg) == BCSBEACON_MAGIC)
+			continue;
+
         if (bcsstatemachine_process_request(state, &addr_client, (BCSMSG*)cl_msg, rcvd)) {
 	        ALOGV("request accepted\n");
         }
@@ -362,13 +281,10 @@ void *state_machine(void *argv) {
 // stdin stays in the main thread, for user input
 // stdout replies on server admin commands
 // stderr is for all extra information and someday will be redirected to a file
-// Str1ker, 06.08.2018: I think we don't need epoll anymore.
-// There are 3 socket groups: TCP, UDP main, UDP broadcast
-// So an application of 5 threads is the best choise.
-#define THREAD_UDP_MAIN 0
-#define THREAD_UDP_BCAST 1
-#define THREAD_TCP_MAP 2
-#define THREAD_UDP_ANNOUNCE 3
+
+// по-русски: серваком можно (по идее) управлять там где запустили.
+// предварительно нужно завернуть stderr в другой файл/канал, чтобы не мельтешил
+// пишем в консоль команды, цикл в конце мейна их обрабатывает. норм? норм.
 
 int main(int argc, char **argv) {
     pthread_attr_t attr; //thread attribute
@@ -401,7 +317,7 @@ int main(int argc, char **argv) {
 	lassert(vector_init(&state.sock_b, BC_FD_NUM));
     
     // map loading
-	char mapfile_name[PATH_MAX] = "propeller.bcsmap";
+	char mapfile_name[PATH_MAX] = "res/propeller.bcsmap";
 	while(true) {
 		if(bcsmap_load(mapfile_name, &(state.map)))
 			break;
@@ -412,6 +328,7 @@ int main(int argc, char **argv) {
 			ALOGE("Fatal error: fgets() failed\n");
 			exit(EXIT_FAILURE);
 		}
+		mapfile_name[strlen(mapfile_name) - 1] = '\0';
 	}
 
 	socklen_t addr_size = sizeof(sockaddr_in);
@@ -472,20 +389,24 @@ int main(int argc, char **argv) {
 	printf("[$] Welcome to the command prompt of dedicated server.\n");
 	printf("[$] Put in your commands, one per line, and press Enter.\n");
 	printf("[$] Start with 'help' if you are confused.\n");
+	printf("[$] Press Ctrl+D to stop Curses-Strike v0.%d server.\n", BCSPROTO_VERSION);
 
 	while(true) {
 		if(fgets(buf, PATH_MAX, stdin) == NULL)
 			break;
+		buf[strlen(buf) - 1] = '\0';
 
 		if (strcmp(buf, "help") == 0) {
 			printf("[$] Someday there will be a help. Now it's empty...\n");
 		}
 		else {
-			printf("[$] Unknown command '%40s'\n", buf);
+			printf("[$] Unknown command '%.40s'\n", buf);
 		}
 	}
 
 	// User pressed Ctrl+D - terminate server
-	
+	printf("[$] You pressed Ctrl+D, exiting gracefully\n");
+
+	// TODO: graceful shutdown
     return EXIT_SUCCESS;
 }

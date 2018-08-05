@@ -26,13 +26,13 @@ $(SUBDIRS): subdirs
 
 # warning: bash-specific script...
 last-config:
-	(echo [i] Compiler is $(CC), linker is $(LD), configuration is $(CONFIG) && \
+	@(echo [i] Compiler is $(CC), linker is $(LD), configuration is $(CONFIG) && \
 	echo [i] CFLAGS are: $(CFLAGS) && \
 	echo [i] LDFLAGS are: $(LDFLAGS)) > "$(ROOTDIR)/make.config.now"
-	if (( $SILENCE_IS_SILVER == 2 )) ; then cat "$(ROOTDIR)/make.config.now" ; fi
-	(! test -f "$(ROOTDIR)/make.config.prev") || diff -N "$(ROOTDIR)/make.config.prev" "$(ROOTDIR)/make.config.now" > /dev/null 2> /dev/null \
+	@if (( $SILENCE_IS_SILVER == 2 )) ; then cat "$(ROOTDIR)/make.config.now" ; fi
+	@(! test -f "$(ROOTDIR)/make.config.prev") || diff -N "$(ROOTDIR)/make.config.prev" "$(ROOTDIR)/make.config.now" > /dev/null 2> /dev/null \
 	|| ( echo -e "\e[33mConfiguration changed (code $$?), running clean\e[0m" ; $(MAKE) -$(MKFLG) clean )
-	cp -f "$(ROOTDIR)/make.config.now" "$(ROOTDIR)/make.config.prev"
+	@cp -f "$(ROOTDIR)/make.config.now" "$(ROOTDIR)/make.config.prev"
 
 subdirs: last-config
 	-mkdir -p "$(BINDIR)"

@@ -216,7 +216,8 @@ bool bcsmap_load(const char *filename, BCSMAP *map)
     
     size_t map_size = 0;
     
-    __syscall(bcsmap_fd = open(filename, O_RDONLY));
+    if((bcsmap_fd = open(filename, O_RDONLY)) == -1)
+	    return false;
 
     // reading contorl string
     __syscall(read(bcsmap_fd, bcsmap_check, sizeof(bcsmap_check)));

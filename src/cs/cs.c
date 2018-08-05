@@ -60,23 +60,6 @@ typedef enum {
 //} BCSDIRECTION;
 const char dirchar[] = { '<', '>', '^', 'v' };
 
-typedef union __bcast_un {
-	struct {
-		in_addr_t bcast;
-		in_addr_t mask;
-	} v4;
-	uint64_t _vval;
-} BCAST_UN;
-
-typedef union __bcast_srv_ep {
-	struct __endpoint {
-		in_addr_t addr;
-		uint16_t port;
-		uint16_t zero; // should be 0 after init
-	} endpoint;
-	uint64_t _vval;
-} BCAST_SRV_UN;
-
 typedef BCSBEACON BCAST_SRV;
 
 // Создаёт вектор интерфейсов. Вектор должен быть неинициализированным
@@ -111,7 +94,8 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 			logprint(ANSI_CLRST);
 
 			// add to vector
-			lassert(vector_push_back(ipv4_faces, un._vval));
+			__vector_val_t vval = { .lng = un._vval };
+			lassert(vector_push_back(ipv4_faces, vval));
 			count++;
 
 			logprint("\n");
@@ -180,6 +164,7 @@ void *receiver_func(void *argv) {
 			case BCSREPLT_NONE: 
 				ALOGW("Server sent message of type = %u, do nothing\n", be32toh(repl->type));
 			break;
+			default: __syscall(-1);
 		}
 		pthread_mutex_unlock(&pfs->mutex_self);
 
@@ -479,13 +464,14 @@ start_bcast_scan:
 			};
 
 			for(size_t i = 0; i < servers.size; i++) {
-				if(servers.array[i] == srv_new._vval) {
+				if(servers.array[i].lng == srv_new._vval) {
 					// this server is already listed
 					goto next_epevent;
 				}
 			}
 
-			lassert(vector_push_back(&servers, srv_new._vval));
+			__vector_val_t vval = { .lng = srv_new._vval };
+			lassert(vector_push_back(&servers, vval));
 			lassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
 			printf("\t%s:%hu\t%.*s - %u\n"
 				, addrstr, be16toh(beacon->port), BCSBEACON_DESCRLEN, beacon->description

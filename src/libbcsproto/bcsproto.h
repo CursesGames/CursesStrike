@@ -3,8 +3,9 @@
 // Note: this include is a beta feature for design- and compile-time
 #include "../liblinux_util/mscfix.h"
 
-#include <stdbool.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <stdint.h> // for known-sized types
+#include <stdbool.h>
 #include <netinet/in.h>
 
 // this include is important on MIPS for `struct timeval'
@@ -57,6 +58,24 @@
 // deprecated
 #define NICK_SIZE BCSPLAYER_NICKLEN
 #define CLIENTS_NUM BCSSERVER_MAXCLIENTS
+
+// unions to simplify broadcasting
+typedef union __bcast_un {
+	struct {
+		in_addr_t bcast;
+		in_addr_t mask;
+	} v4;
+	uint64_t _vval;
+} BCAST_UN;
+
+typedef union __bcast_srv_ep {
+	struct __endpoint {
+		in_addr_t addr;
+		uint16_t port;
+		uint16_t zero; // should be 0 after init
+	} endpoint;
+	uint64_t _vval;
+} BCAST_SRV_UN;
 
 // structure for storing coordinates
 typedef struct __point {
@@ -197,10 +216,10 @@ typedef union {
 typedef struct __bcsmsg {
 // TODO: номер может переполниться, добавить обработку такой ситуации
 	uint32_t packet_no;
-// action that the client wants to do
-	BCSACTION action;
 // accurate to microseconds
 	struct timeval time_gen;
+// action that the client wants to do
+	BCSACTION action;
 // additional params - 8 bytes
 	BCSMSGPARAM un;
 } BCSMSG;
@@ -210,6 +229,8 @@ typedef struct __bcsmsg_reply {
 // number of packet from incoming message
 // из приходящего сообщения
 	uint32_t packet_no;
+// accurate to microseconds
+	struct timeval time_gen;
 // response type
 	BCS_REPLY_TYPE type;
 } BCSMSGREPLY;
@@ -218,6 +239,9 @@ typedef struct __bcsmsg_reply {
 // только в случае type == BCSREPLT_ANNOUNCE
 typedef struct __bcsmsg_announce {
 	uint16_t count; // количество записей в массивах
+// номер записи, соответствующей самому игроку
+// спасибо за идею NRshka
+	uint16_t index_self;
 // all public information
 // the very first element [0] is always the client that received the message
 // вся публичная информация о клиентах

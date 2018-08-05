@@ -20,7 +20,10 @@
 #define VECTOR_GROWTH_FACTOR 1536
 
 // Datatype for vector objects
-typedef uint64_t __vector_val_t;
+typedef union {
+	uint64_t lng;
+	void *ptr;
+} __vector_val_t;
 
 // A simple array-like collection with ability to grow, containing (by default) pointer-size integers
 typedef struct __vector {
