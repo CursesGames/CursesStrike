@@ -24,6 +24,12 @@
 #define CLIENTS_NUM 16
 #define BC_FD_NUM 5
 
+//Data for broadcast
+struct bc_data{
+    int broadcast_fd;
+    struct sockaddr_in udp_bc_address;
+};
+
 // Data for thread[1]
 struct udp_data {
     int fd;
