@@ -175,23 +175,26 @@ void *send_announces(void *arg) {
     while(1) {
         player_count = return_clients_size(clients);
         repl = alloca(sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count);
+        (*repl).type = BCSREPLT_ANNOUNCE;
         ann = (BCSMSGANNOUNCE *)(repl + 1);
         ann->count = player_count;
         array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //beginning of BCSCLIENT_PUBLIC
         cl_ptr = clients; //beginning of array clients
 
-        for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) { //send to all clients
-            if((*cl_ptr).private_info.endpoint.sin_addr.s_addr != 0) {// if clients[i] is not NULL
-                *array = cl_ptr->public_info; //0 element - client-receiver public_info
-                array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
-                for(j = 0; j < player_count; j++, array++) { //other clients public_info
-                    if((j != i) && ((*(cl_ptr + j)).private_info.endpoint.sin_addr.s_addr) != 0){ //do not include client-receiver and NULL clients
-                        *array = (cl_ptr + j)->public_info;
+        if(player_count != 0){
+            for(i = 0; i < CLIENTS_NUM; i++, cl_ptr++) { //send to all clients
+                if((*cl_ptr).private_info.endpoint.sin_addr.s_addr != 0) {// if clients[i] is not NULL
+                    *array = cl_ptr->public_info; //0 element - client-receiver public_info
+                    array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
+                    for(j = 0; j < player_count; j++, array++) { //other clients public_info
+                        if((j != i) && ((*(cl_ptr + j)).private_info.endpoint.sin_addr.s_addr) != 0){ //do not include client-receiver and NULL clients
+                            *array = (cl_ptr + j)->public_info;
+                        }
                     }
                 }
+                // warning! the pointer to member of packed structure!!!
+                __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) (void *)(&(cl_ptr->private_info.endpoint)), addr_size));
             }
-            // warning! the pointer to member of packed structure!!!
-            __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) (void *)(&(cl_ptr->private_info.endpoint)), addr_size));
         }
     }
     // Unreachable code
