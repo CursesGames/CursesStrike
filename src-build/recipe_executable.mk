@@ -1,10 +1,22 @@
 LOCAL_OBJECTS := $(LOCAL_SOURCES:.c=.o)
+LOCAL_OBJECTS := $(addprefix $(OBJDIR)/,$(LOCAL_OBJECTS))
 
-$(BINDIR)$(LOCAL_MODULE): $(LOCAL_OBJECTS)
-	cd $(OBJDIR) && $(LD) -o $@ $^ $(LOCAL_STATIC_DEPENDENCIES) $(LDFLAGS) $(LDFLAGS_LOCAL) $(LOCAL_SHARED_DEPENDENCIES)
-	@echo -e "\e[36m LD \e[0m $(shell realpath --relative-to $(ROOTDIR) $@)"
+LOCAL_STATIC_DEPENDENT_FILES := $(addprefix $(LIBDIR)/,$(LOCAL_STATIC_DEPENDENCIES))
+LOCAL_SHARED_DEPENDENT_LIBS := $(addprefix -l,$(LOCAL_SHARED_DEPENDENCIES))
+
+LOCAL_DESTINATION := $(BINDIR)/$(LOCAL_MODULE)
+
+# check Makefile itself. If it was changed, rebuild
+$(LOCAL_DESTINATION): Makefile
+$(LOCAL_DESTINATION): $(LOCAL_OBJECTS) $(LOCAL_STATIC_DEPENDENT_FILES)
+	$(LD) -L$(LIBDIR) -o $@ $(LOCAL_OBJECTS) $(LOCAL_STATIC_DEPENDENT_FILES) $(LDFLAGS) $(LDFLAGS_LOCAL) $(LOCAL_SHARED_DEPENDENT_LIBS)
+	@echo -e "\x1b[36m LD \x1b[0m $(subst $(ROOTDIR)/,,$@)"
 
 $(LOCAL_OBJECTS): $(LOCAL_HEADERS)
-%.o: %.c
-	$(CC) $(CFLAGS) $(CFLAGS_LOCAL) -c -o $(OBJDIR)$@ $<
-	@echo -e "\e[33m CC \e[0m $(shell realpath --relative-to $(ROOTDIR) $(OBJDIR)$@)"
+$(OBJDIR)/%.o: %.c
+	$(CC) $(CFLAGS) $(CFLAGS_LOCAL) -c -o $@ $<
+	@echo -e "\e[33m CC \e[0m $(subst $(ROOTDIR)/,,$@)"
+
+clean:
+	rm -f "$(LOCAL_DESTINATION)"
+	rm -f $(LOCAL_OBJECTS)

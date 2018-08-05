@@ -15,9 +15,10 @@ How to build:
 - Clone this repo
 - `cd` to root directory of this repo
 - If you want to cross-compile,	set up your toolchain in Makefile.*arch* 
-- `make` (is an alias to `make release`) or `make debug` if you want debugging symbols
+- `make` to make release, or `CONFIG=debug make` if you want debugging symbols
 - Executables are in `bin` subdirectory
-- If you want a single target, just point it, for example: `make cs` or `make csds`
+- If you want a single target, just point it, for example: `make cs`
+- If you want a single target in debug configuration: `CONFIG=debug make cs`
 
 Feel free to send issues and pull requests.
 

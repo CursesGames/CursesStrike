@@ -1,5 +1,3 @@
-.PHONY: clean
-
 include $(BUILD_INITIALIZE)
 
 CFLAGS_LOCAL := -std=gnu99
@@ -10,6 +8,3 @@ LOCAL_STATIC_DEPENDENCIES :=
 LOCAL_MODULE := libbcsproto.a
 
 include $(BUILD_STATIC_LIBRARY)
-
-clean:
-	rm -f $(LIBDIR)/$(LOCAL_MODULE)
