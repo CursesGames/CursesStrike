@@ -24,10 +24,10 @@
 #define CLIENTS_NUM 16
 #define BC_FD_NUM 5
 
-// Data for broadcast sockets
-struct bc_data {
-    int broadcast_fd;
-    struct sockaddr_in udp_bc_address;
+// Data for thread[1]
+struct udp_data {
+    int fd;
+    BCSCLIENT *cl_array;
 };
 
 // Socket initialization and udp address binding
@@ -146,7 +146,7 @@ int return_clients_size(BCSCLIENT *clients) {
 
 /* Thread[1] function - send announces to clients */
 void *send_announces(void *arg) {
-    BCSCLIENT *clients = ((BCSCLIENT *)arg);
+    BCSCLIENT *clients = ((struct udp_data *)arg)->cl_array;
     BCSCLIENT *cl_ptr;
     BCSMSGREPLY *repl;
     BCSMSGANNOUNCE *ann;
@@ -155,10 +155,10 @@ void *send_announces(void *arg) {
     socklen_t addr_size = sizeof(struct sockaddr_in);
     int player_count;
     int i, j;
-    int fd;
+    int u_fd = (*((struct udp_data *)arg)).fd;
 
     // Initialize socket descriptor
-    __syscall(fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+    __syscall(u_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 
     // Setting up port number and address
     addr_udp.sin_family = AF_INET;
@@ -167,10 +167,10 @@ void *send_announces(void *arg) {
 
     // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
     int reuse_addr = 1;
-    __syscall(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
+    __syscall(setsockopt(u_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
-    __syscall(bind(fd, (struct sockaddr *)&addr_udp, addr_size));
+    __syscall(bind(u_fd, (struct sockaddr *)&addr_udp, addr_size));
 
     while(1) {
         player_count = return_clients_size(clients);
@@ -187,18 +187,18 @@ void *send_announces(void *arg) {
                 || ((*cl_ptr).public_info.state == BCSCLST_PLAYING)
                 || ((*cl_ptr).public_info.state == BCSCLST_RESPAWNING))
                 && ((*cl_ptr).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)) {// if clients[i] is not NULL
-                    *array = cl_ptr->public_info; //0 element - client-receiver public_info
+                    *array = (*cl_ptr).public_info; //0 element - client-receiver public_info
                     array = (BCSCLIENT_PUBLIC *)(((uint16_t *)ann) + 1); //to the beginning of BCSCLIENT_PUBLIC
                     for(j = 0; j < player_count; j++, array++) { //other clients with not error state public_info
                         if((j != i) //do not include client-receiver and NULL clients
-                        && ((*cl_ptr).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)
-                        && ((*cl_ptr).public_info.state != BCSCLST_UNDEF)){ 
-                            *array = (cl_ptr + j)->public_info;
+                        && ((*(cl_ptr + j)).private_info.endpoint.sin_addr.s_addr != INADDR_ANY)
+                        && ((*(cl_ptr + j)).public_info.state != BCSCLST_UNDEF)){ 
+                            *array = (*(cl_ptr + j)).public_info;
                         }
                     }
                 }
                 // warning! the pointer to member of packed structure!!!
-                __syscall(sendto(fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) (void *)(&(cl_ptr->private_info.endpoint)), addr_size));
+                __syscall(sendto(u_fd, repl, sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count, 0, (struct sockaddr *) &((*cl_ptr).private_info.endpoint), addr_size));
             }
         }
         usleep(33333);
@@ -326,8 +326,13 @@ int main(int argc, char **argv) {
     pthread_attr_init (&attr);
     pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
 
+    struct udp_data data = {
+        .fd = u_fd
+      , .cl_array = clients
+    };
+
     lassert((result = pthread_create (&thread[0], &attr, send_broadcast, (void *) &addr_udp)) == 0); //create thread for broadcast
-    lassert((result = pthread_create (&thread[1], &attr, send_announces, (void *) clients)) == 0); //create thread for announces
+    lassert((result = pthread_create (&thread[1], &attr, send_announces, (void *) &data)) == 0); //create thread for announces
 
     // Set up the event polling instance
     __syscall(epfd = epoll_create1 (0));
