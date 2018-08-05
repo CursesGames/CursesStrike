@@ -157,21 +157,6 @@ void *send_announces(void *arg) {
     int i, j;
     int u_fd = (*((struct udp_data *)arg)).fd;
 
-    // Initialize socket descriptor
-    __syscall(u_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
-
-    // Setting up port number and address
-    addr_udp.sin_family = AF_INET;
-    addr_udp.sin_port = htobe16(BCSSERVER_DEFAULT_PORT);
-    addr_udp.sin_addr.s_addr = INADDR_ANY;
-
-    // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
-    int reuse_addr = 1;
-    __syscall(setsockopt(u_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
-
-    // Link address with socket descriptor
-    __syscall(bind(u_fd, (struct sockaddr *)&addr_udp, addr_size));
-
     while(1) {
         player_count = return_clients_size(clients);
         repl = alloca(sizeof(BCSMSGREPLY) + sizeof(uint16_t) + sizeof(BCSCLIENT_PUBLIC)*player_count);
