@@ -61,7 +61,7 @@ typedef struct __map_t {
     uint16_t height;
     // pointer to single-dimension array of 8-bit primitives
     uint8_t *map_primitives;
-} __attribute__((packed)) BCSMAP;
+} BCSMAP;
 
 // source (.bmp) colors of item on the map
 enum {

@@ -122,7 +122,7 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
         lseek(source_bmp_fd, padding, SEEK_CUR);  // jump next line
     }
 
-    for (int i = 0; i < primitives_arr_size; ++i) {
+    for (size_t i = 0; i < primitives_arr_size; ++i) {
         temp_RGB_unit = raster_data[i].rgbtRed << 16;
         temp_RGB_unit += raster_data[i].rgbtGreen << 8;
         temp_RGB_unit += raster_data[i].rgbtBlue;

@@ -71,6 +71,9 @@
 // жёсткая проверка условия, как и выше, ориентированная на системные вызовы
 #define __syscall(x) sysassert((x) != -1)
 
+// assert (compile-time)
+#define STATIC_ASSERT(x) { int __temp_static_assert[(x) ? -1 : 1]; }
+
 // debug
 extern bool verbose;
 #define VERBOSE if(verbose)

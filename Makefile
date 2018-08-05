@@ -4,7 +4,7 @@ ROOTDIR := $(CURDIR)
 include $(ROOTDIR)/src-build/default-config.mk
 
 # whole solution flags
-CFLAGS := -Wno-unused-parameter -ansi -Wextra -pedantic
+CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter
 LDFLAGS :=
 
 # native compilation

@@ -18,10 +18,12 @@
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
 #include "../libbcsproto/bcsproto.h"
+#include "../libbcsstatemachine/bcsstatemachine.h"
+#include <linux/limits.h>
 
+// listen backlog size of TCP socket
 #define LISTEN_NUM 16
-#define TIMEOUT 10
-#define CLIENTS_NUM 16
+// max bcast ifaces
 #define BC_FD_NUM 5
 
 //Data for broadcast
@@ -104,7 +106,8 @@ void *send_broadcast (void *arg) {
             bcs[n].udp_bc_address.sin_port = htobe16(BCSSERVER_BCAST_PORT);
             bcs[n].udp_bc_address.sin_addr.s_addr = ((struct sockaddr_in*)(ifaddr->ifa_ifu.ifu_broadaddr))->sin_addr.s_addr;
 
-            ALOGV("beacon sent to %s:%hu\n", inet_ntoa(bcs[n].udp_bc_address.sin_addr), ntohs(bcs[i].udp_bc_address.sin_port));
+            ALOGD("beacons will be sent to %s:%hu\n"
+		        , inet_ntoa(bcs[n].udp_bc_address.sin_addr), be16toh(bcs[n].udp_bc_address.sin_port));
 
             // Configure the socket to broadcast
             setsockopt(bcs[n].broadcast_fd, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
@@ -123,19 +126,20 @@ next_iface:
 
     while(true) {
         for(i = 0; i < n; i++){
-            __syscall(sendto(bcs[i].broadcast_fd,
-            &(to_send), sizeof(BCSBEACON), 0, 
+            __syscall(sendto(bcs[i].broadcast_fd, &to_send, sizeof(BCSBEACON), 0, 
             (struct sockaddr *) &(bcs[i].udp_bc_address), addr_size));
         }
         sleep(1);
     }
 
     // Unreachable code
-    // It will be neccessary before servers abnornal termination
+    // It would be neccessary in the case of abnormal server termination
     //pthread_exit (NULL);
 }
 
-/* Return current number of clients */
+// Return current number of clients
+// With the introduction of special `count' variable
+// this function might become redundant
 int return_clients_size(BCSCLIENT *clients) {
     int i;
     int num = 0;
@@ -284,228 +288,204 @@ void log_print_cl_info(BCSCLIENT *clients){
     }
 }
 
+void *serve_map(void *argv) {
+	// извлекаем полное состояние
+	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
+	
+    // At this moment, we suppose that struct includes:
+    // width (2 bytes), height (2 bytes) and the pointer to primitives
+
+	char map_hdr[4];
+	pthread_mutex_lock(&state->mutex_self);
+	int t_fd = state->sock_t; // copy descriptor from state
+	// жоская адресная арифметика, на деле просто копируем размеры в big-endian
+	*(uint16_t*)map_hdr = htobe16(state->map.width);
+	*(uint16_t*)(map_hdr + 2) = htobe16(state->map.height);
+	uint8_t *map_ptr = state->map.map_primitives;
+	size_t map_size = state->map.width * state->map.height;
+	pthread_mutex_unlock(&state->mutex_self);
+
+	sockaddr_in addr_client;
+	socklen_t sa_len;
+	while(true) {
+		sa_len = sizeof(addr_client);
+		int s_fd;
+        __syscall(s_fd = accept(t_fd, (sockaddr*)&addr_client, &sa_len));
+
+        // Str1ker, 03.08.2018: proto convention
+		// Str1ker, 06.08.2018: optimization, lol
+		__syscall(shutdown(s_fd, SHUT_RD));
+		// MSG_WAITALL гарантирует, что все данные будут отправлены без повторных recv
+		// (за исключением EINTR наверно, Илья знает)
+        __syscall(send(s_fd, &map_hdr, 4, MSG_WAITALL)); 
+        __syscall(send(s_fd, map_ptr, map_size, MSG_WAITALL));
+        ALOGD("Map sent to client %s:%hu\n"
+			, inet_ntoa(addr_client.sin_addr), addr_client.sin_port);
+
+        close(s_fd);
+	}
+
+	// ReSharper disable once CppUnreachableCode
+	return NULL;
+}
+
+void *state_machine(void *argv) {
+	// извлекаем полное состояние
+	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
+
+	pthread_mutex_lock(&state->mutex_self);
+	int u_fd = state->sock_u; // copy descriptor from state
+	pthread_mutex_unlock(&state->mutex_self);
+
+	// размер буфера должен быть огромным, как и сама дейтаграмма. так, на всякий.
+	// мало ли, захотим корову переслать?
+	char cl_msg[BCSDGRAM_MAX];
+
+	sockaddr_in addr_client;
+	socklen_t sa_len;
+	while(true) {
+		sa_len = sizeof(addr_client);
+		ssize_t rcvd;
+        __syscall(rcvd = recvfrom(u_fd, &cl_msg, BCSDGRAM_MAX, 0, (sockaddr*)&addr_client, &sa_len));
+        if (bcsstatemachine_process_request(state, &addr_client, (BCSMSG*)cl_msg, rcvd)) {
+	        ALOGV("request accepted\n");
+        }
+        else {
+	        ALOGV("request denied\n");
+        }
+	}
+
+	// ReSharper disable once CppUnreachableCode
+	return NULL;
+}
+
+// stdin stays in the main thread, for user input
+// stdout replies on server admin commands
+// stderr is for all extra information and someday will be redirected to a file
+// Str1ker, 06.08.2018: I think we don't need epoll anymore.
+// There are 3 socket groups: TCP, UDP main, UDP broadcast
+// So an application of 5 threads is the best choise.
+#define THREAD_UDP_MAIN 0
+#define THREAD_UDP_BCAST 1
+#define THREAD_TCP_MAP 2
+#define THREAD_UDP_ANNOUNCE 3
+
 int main(int argc, char **argv) {
     pthread_attr_t attr; //thread attribute
-    pthread_t thread[2];
-    struct sockaddr_in addr_tcp, addr_udp, addr_bc_udp, addr_client;
-    struct epoll_event event;
-    socklen_t addr_size = sizeof (struct sockaddr_in);
-    BCSCLIENT *clients = malloc(sizeof(BCSCLIENT) * CLIENTS_NUM);//clients struct
-    BCSMSG cl_msg;
-    BCSMSGREPLY serv_msg;
-    BCSMAP map;
-    void *status;
-    int epfd; //event polling instance
-    int u_fd, t_fd, s_fd; //udp and tcp socket descriptor
-    int result;
-    int id;
-    
-    //map loading
-    if(!bcsmap_load("propeller.bcsmap", &map)){
-        ALOGE("Could not load map from file\n");
-        exit(EXIT_FAILURE);
-    }
-    
-    memset(clients, 0, sizeof(BCSCLIENT) * CLIENTS_NUM); //clients array nullification
+    pthread_t threads[3];
 
-    u_fd = udp_bind (&addr_udp, addr_size);
-    t_fd = tcp_bind (&addr_tcp, addr_size);
+	// до того, как мы не начали создавать потоки
+	// за доступ к state можно не опасаться
+	// поэтому в main() до создания потоков не юзаем pthread_mutex_lock()
+	BCSSERVER_FULL_STATE state = {
+		  .map = {
+			  .width = 0
+			, .height = 0
+			, .map_primitives = NULL
+		  }
+		, .map_overlay = {
+			.width = 0
+			, .height = 0
+			, .map_primitives = NULL
+		  }
+		, .mutex_self = PTHREAD_MUTEX_INITIALIZER
+		, .mutex_sock = PTHREAD_MUTEX_INITIALIZER
+		, .sock_u = -1 // erroneous socket
+		, .sock_t = -1
+		, .player_count = 0
+		, .frames = 0
+	};
+
+	// clients array nullification
+	memset(&state.client, 0, sizeof(state.client));
+	lassert(vector_init(&state.sock_b, BC_FD_NUM));
+    
+    // map loading
+	char mapfile_name[PATH_MAX] = "propeller.bcsmap";
+	while(true) {
+		if(bcsmap_load(mapfile_name, &(state.map)))
+			break;
+		ALOGW("Could not load map from file '%s'\n", mapfile_name);
+		printf("Enter filename of map in .bcsmap format: ");
+		fflush(stdout); // for sure
+		if(fgets(mapfile_name, PATH_MAX, stdin) == NULL) {
+			ALOGE("Fatal error: fgets() failed\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	socklen_t addr_size = sizeof(sockaddr_in);
+
+	// Initialize UDP socket descriptor
+    __syscall(state.sock_u = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+
+    // Setting up port number and address
+    sockaddr_in addr_udp = {
+		  .sin_addr = INADDR_ANY
+		, .sin_port = htobe16(BCSSERVER_DEFAULT_PORT)
+		, .sin_family = AF_INET
+	};
+
+    // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
+    int reuse_addr = 1;
+    __syscall(setsockopt(state.sock_u, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
+
+    // Link address with socket descriptor
+    __syscall(bind(state.sock_u, (sockaddr*)&addr_udp, addr_size));
+
+    // Initialize TCP socket descriptor
+    __syscall(state.sock_t = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+
+    // Setting up port number and address
+	sockaddr_in addr_tcp = {
+		  .sin_addr = INADDR_ANY
+		, .sin_port = htobe16(BCSSERVER_DEFAULT_PORT)
+		, .sin_family = AF_INET
+	};
+
+    // Link address with socket descriptor
+    __syscall(bind(state.sock_t, (sockaddr*)&addr_tcp, addr_size));
+
+    // Run socket listenning
+    __syscall(listen(state.sock_t, LISTEN_NUM));
 
     // Initialize thread attribute
     // Thread attribute `joinable' tells, if the system will wait for its termination
     // Kramarenko said that some systems do not have this attribute by default
-    pthread_attr_init (&attr);
+	// What if he lied?
+    pthread_attr_init(&attr);
     pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
 
-    struct udp_data data = {
-        .fd = u_fd
-      , .cl_array = clients
-    };
+	// create thread for broadcast
+    lassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr, send_broadcast, NULL) == 0);
+	// create thread for announces
+    lassert(pthread_create(&threads[THREAD_UDP_ANNOUNCE], &attr, send_announces, &state) == 0);
 
-    lassert((result = pthread_create (&thread[0], &attr, send_broadcast, (void *) &addr_udp)) == 0); //create thread for broadcast
-    lassert((result = pthread_create (&thread[1], &attr, send_announces, (void *) &data)) == 0); //create thread for announces
+	// Str1ker, 06.08.2018
+	// create thread for current map serving
+	lassert(pthread_create(&threads[THREAD_TCP_MAP], &attr, serve_map, &state) == 0);
+	// create thread for our great state machine!
+	lassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr, state_machine, &state) == 0);
 
-    // Set up the event polling instance
-    __syscall(epfd = epoll_create1 (0));
+	// accept commands from stdin
+	char buf[PATH_MAX];
+	printf("[$] Welcome to the command prompt of dedicated server.\n");
+	printf("[$] Put in your commands, one per line, and press Enter.\n");
+	printf("[$] Start with 'help' if you are confused.\n");
 
-    // Add new notice to epfd for file with t_fd descriptor
-    event.data.fd = t_fd;
-    event.events = EPOLLIN | EPOLLET;
-    __syscall(epoll_ctl(epfd, EPOLL_CTL_ADD, t_fd, &event));
+	while(true) {
+		if(fgets(buf, PATH_MAX, stdin) == NULL)
+			break;
 
-    // Add new notice to epfd for file with u_fd descriptor
-    event.data.fd = u_fd;
-    event.events = EPOLLIN | EPOLLET;
-    __syscall(epoll_ctl(epfd, EPOLL_CTL_ADD, u_fd, &event));
+		if (strcmp(buf, "help") == 0) {
+			printf("[$] Someday there will be a help. Now it's empty...\n");
+		}
+		else {
+			printf("[$] Unknown command '%40s'\n", buf);
+		}
+	}
 
-    while(true) {
-        // Lock
-        __syscall(result = epoll_wait (epfd, &event, 1, -1));
-
-        // Bad event happened
-        if ((event.events & EPOLLERR) ||
-            (event.events & EPOLLHUP)) {
-            fprintf(stderr, "epoll error\n");
-        }
-
-        // Connect with client, send map to him and unconnect
-        if (event.data.fd == t_fd) { //check event
-            __syscall(s_fd = accept (t_fd, (struct sockaddr *) &addr_client, &addr_size));
-
-            // At this moment, we suppose that struct includes:
-            // width (2 bytes), height (2 bytes) and the pointer to primitives
-            _Static_assert((sizeof(BCSMAP) - sizeof(void*) == 4), "the size of BCSMAP was changed");
-            // Str1ker, 03.08.2018: proto convention
-            uint16_t tmp = htobe16(map.width);
-            __syscall(send (s_fd, &tmp, 2, 0));
-            tmp = htobe16(map.height);
-            __syscall(send (s_fd, &tmp, 2, 0)); 
-
-            __syscall(send (s_fd, map.map_primitives, map.width * map.height, 0));
-            printf("map was sent to client\n");
-
-            close(s_fd);
-        }
-
-        // Receive message from client by udp, add client data to array
-        // and send him his initial coordinates
-        if(event.data.fd == u_fd){ //check event
-            __syscall(result = recvfrom(u_fd, &cl_msg, sizeof(BCSMSG), 0, (struct sockaddr*) &addr_client, &addr_size));
-            // why the client may be denied
-            id = search_client(clients, addr_client);
-            serv_msg.packet_no = cl_msg.packet_no; // packet to send number
-
-            switch(be32toh(cl_msg.action)){
-                case BCSACTION_CONNECT: // client sent CONNECT
-                    // Ignore beacon packets
-                    if(result >= 8 && be64toh(*((uint64_t*)&cl_msg)) == BCSBEACON_MAGIC)
-                        continue;
-                    printf("received CONNECT from client\n");
-                    // Add client to array
-                    switch(add_client(&map, clients, addr_client)){
-                        case -1: // clients limit is settled
-                            serv_msg.type = htobe32(BCSREPLT_NACK);
-                            break;
-
-                        default:
-                            clients[id].public_info.state = BCSCLST_CONNECTING; //client state to CONNECTING
-                            serv_msg.type = htobe32(BCSREPLT_MAP);
-                            log_print_cl_info(clients);
-                    }
-                    break;
-                    
-                case BCSACTION_CONNECT2: // client sent CONNECT2
-                    printf("received CONNECT2 from client\n");
-                    // Change client stat if the previous was BCSCLST_CONNECTING
-                    if(clients[id].public_info.state == BCSCLST_CONNECTING){
-                        clients[id].public_info.state = BCSCLST_CONNECTED;
-                        serv_msg.type = htobe32(BCSREPLT_ACK);
-                    }
-                    else{
-                        //error
-                        clients[id].public_info.state = BCSCLST_UNDEF;
-                        serv_msg.type = htobe32(BCSREPLT_NACK);
-                    }
-                    break;
-                        
-                case BCSACTION_DISCONNECT:
-                    delete_client(clients, addr_client);
-                    serv_msg.type = htobe32(BCSREPLT_ACK);
-                    break;
-
-                case BCSACTION_MOVE:
-                    switch(be32toh(cl_msg.un.ints.int_lo)){
-                        case BCSDIR_LEFT:
-                            if((clients[id].public_info.position.x - 1) == 0){
-                                serv_msg.type = htobe32(BCSREPLT_NACK);
-                            }
-                            else{
-                                clients[id].public_info.position.x--;
-                                serv_msg.type = htobe32(BCSREPLT_ACK);
-                            }
-                            break;
-                                
-                        case BCSDIR_RIGHT:
-                            if((clients[id].public_info.position.x + 1) == map.width){
-                                serv_msg.type = htobe32(BCSREPLT_NACK);
-                            }
-                            else{
-                                clients[id].public_info.position.x++;
-                                serv_msg.type = htobe32(BCSREPLT_ACK);
-                            }
-                            break;
-
-                        case BCSDIR_UP:
-                            if((clients[id].public_info.position.y - 1) == 0){
-                                serv_msg.type = htobe32(BCSREPLT_NACK);
-                            }
-                            else{
-                                clients[id].public_info.position.y--;
-                                serv_msg.type = htobe32(BCSREPLT_ACK);
-                            }
-                            break;
-
-                        case BCSDIR_DOWN:
-                            if((clients[id].public_info.position.y + 1) == map.height){
-                                serv_msg.type = htobe32(BCSREPLT_NACK);
-                            }
-                            else{
-                                clients[id].public_info.position.y++;
-                                serv_msg.type = htobe32(BCSREPLT_ACK);
-                            }
-
-                            default:
-                                serv_msg.type = htobe32(BCSREPLT_NACK);
-                        }        
-                        break;
-                        
-                case BCSACTION_FIRE:
-                    switch(clients[id].public_info.state){
-                        case BCSCLST_CONNECTED:
-                            clients[id].public_info.state = BCSCLST_PLAYING;
-                            serv_msg.type = htobe32(BCSREPLT_ACK);
-                            break;
-
-                        case BCSCLST_PLAYING: //UNDEFINED
-                            break;
-
-                        default: //nothing -> error
-                            serv_msg.type = htobe32(BCSREPLT_NACK);
-                        }
-                        break;
-
-                //case BCSACTION_STRAFE: //UNDEFINED
-                //    serv_msg.type = htobe32(BCSREPLT_NACK);
-                //    break;
-                
-                case BCSACTION_ROTATE: //UNDEFINED
-                    serv_msg.type = htobe32(BCSREPLT_NACK);
-                    break;
-
-                case BCSACTION_REQSTATS: //UNDEFINED
-                    serv_msg.type = htobe32(BCSREPLT_NACK);
-                    break;
-
-                default:
-                    serv_msg.type = htobe32(BCSREPLT_NACK);
-            }
-            __syscall(sendto(u_fd, &serv_msg, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &addr_client, addr_size));
-        }
-    }
-
-    // Unreachable code
-    // It will be neccessary before servers abnornal termination
-    /* for(i = 0; i < 2; i++) {
-        pthread_join(thread[i], &status); 
-        lassert(status == 0);
-    }
-    pthread_attr_destroy(&attr);
-
-    free(clients);
-
-    close(t_fd);
-    close(u_fd); */
-
-    return(EXIT_SUCCESS);
+	// User pressed Ctrl+D - terminate server
+	
+    return EXIT_SUCCESS;
 }
-

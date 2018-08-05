@@ -3,8 +3,8 @@
 // Note: this include is a beta feature for design- and compile-time
 #include "../liblinux_util/mscfix.h"
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h> // for known-sized types
 #include <netinet/in.h>
 
 // this include is important on MIPS for `struct timeval'
@@ -22,12 +22,12 @@
 //   be16toh(), be32toh(), be64toh()             //
 ///////////////////////////////////////////////////
 
-#define BCSPROTO_VERSION 0x00000101
+#define BCSPROTO_VERSION 0x0002
 
 // beacon packet signature
 #define BCSBEACON_MAGIC 0x1324214277da7aff
 // длина человекочитаемого имени сервера без '\0':
-#define BCSBEACON_DESCRLEN 45
+#define BCSBEACON_DESCRLEN 47
 
 // default server port, what's unclear?
 #define BCSSERVER_DEFAULT_PORT 2018
@@ -39,6 +39,10 @@
 // max size of data structures for client list
 // this is define and not a variable for optimization
 #define BCSSERVER_MAXCLIENTS 16
+
+// how many times the same datagram will be sent
+// values on the client and the server may vary
+#define BCSPROTO_PACKETDUP 2
 
 // from csds.c
 // maximum size of the buffer to receive a datagram
@@ -161,6 +165,8 @@ typedef struct __bcsclient_info_public_ext {
 typedef struct __bcsclient_info_private {
 	// ip address and port of client
 	struct sockaddr_in endpoint;
+	// last received packet no
+	uint32_t last_packet_no;
 	// timestamp of last fire event,
 	// to limit fire rate
 	struct timeval time_last_fire;
@@ -227,6 +233,8 @@ typedef struct __bcs_beacon {
 // server port. The IP address will be automatically extracted from the broadcast message
 // порт сервера. IP адрес будет вычленен автоматически из broadcast-сообщения
 	uint16_t port;
+// версия протокола сервера, вкомпиливается в бинарник из константы BCSPROTO_VERSION
+	uint16_t proto_ver;
 // string with the human-readable name of the server
 // строка с человекочитаемым названием сервера
 	char description[BCSBEACON_DESCRLEN + 1];

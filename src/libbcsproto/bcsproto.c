@@ -5,8 +5,6 @@
 #include "bcsproto.h"
 #include "../liblinux_util/linux_util.h"
 
-_Static_assert(sizeof(BCSDIRECTION) == sizeof(int), "govno");
-
 uint32_t bcsproto_next_packet_no = 0;
 
 inline void bcsproto_new_packet(BCSMSG *msg) {

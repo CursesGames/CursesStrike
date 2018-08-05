@@ -24,6 +24,7 @@ typedef uint64_t __vector_val_t;
 
 // A simple array-like collection with ability to grow, containing (by default) pointer-size integers
 typedef struct __vector {
+// pointer to internal array
 	__vector_val_t *array;
 // actual count of items
 	size_t size;
@@ -33,6 +34,7 @@ typedef struct __vector {
 	uint32_t _growth_factor; 
 } VECTOR;
 
+// Initializes vector, allocating memory ahead for `initial_capacity' elems
 bool vector_init(VECTOR *vect, size_t initial_capacity);
 // Pushes `value' to the end of vector. Value is _copied_.
 bool vector_push_back(VECTOR *vect, __vector_val_t value);

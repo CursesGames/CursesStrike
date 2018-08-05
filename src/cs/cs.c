@@ -23,6 +23,7 @@
 #include "../libbcsmap/bcsmap.h"
 #include "../libbcsproto/bcsproto.h"
 #include "../libvector/vector.h"
+#include "../libbcsstatemachine/bcsstatemachine.h"
 
 // catching broadcast messages timeout
 #define BCAST_SCAN_TIMEOUT_SEC 4
@@ -33,10 +34,6 @@
 
 // WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
-
-// this is to shorten access to endpoint struct
-typedef struct sockaddr_in sockaddr_in;
-typedef struct sockaddr sockaddr;
 
 // taken from Bionicle Commander
 typedef enum {
@@ -81,25 +78,6 @@ typedef union __bcast_srv_ep {
 } BCAST_SRV_UN;
 
 typedef BCSBEACON BCAST_SRV;
-
-// I don't bother with packing of this structure now
-typedef struct {
-	BCSCLIENT_PUBLIC self;
-	struct {
-		uint32_t count;
-		BCSCLIENT_PUBLIC *array;
-	} others;
-	pthread_mutex_t mutex_self; // this struct data exclusive access
-	pthread_mutex_t mutex_frame; // ncurses view exclusive access
-	pthread_mutex_t mutex_sock; // udp socket exclusive access
-	sockaddr_in endpoint; // Server IP:Port
-	int sockfd; // UDP socket
-	BCSMAP map;
-	BCSMAP map_overlay;
-	WINDOW *mappad;
-	WINDOW *below;
-	size_t frames;
-} BCSPLAYER_FULL_STATE;
 
 // Создаёт вектор интерфейсов. Вектор должен быть неинициализированным
 size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
