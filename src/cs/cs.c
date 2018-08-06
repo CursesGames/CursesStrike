@@ -150,6 +150,7 @@ void *receiver_func(void *argv) {
 				pthread_mutex_lock(&pfs->mutex_self);
 				// copy self state
 				pfs->self = players[ann->index_self];
+				pfs->others.index_self = ann->index_self;
 				pfs->others.count = ann->count;
 				memcpy(&pfs->others.array, players, sizeof(BCSCLIENT_PUBLIC) * ann->count);
 				pthread_mutex_unlock(&pfs->mutex_self);
@@ -300,11 +301,24 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// следующие четыре - куда на экран проецируем
     nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
-	// draw player
+	// draw players
 	nassert(wmove(stdscr, self.position.y, self.position.x));
 	wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	winsch(stdscr, dirchar[self.direction]);
 	wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+
+	// lock for all enemies, I don't think this is slow
+	pthread_mutex_lock(&pfs->mutex_self);
+	for(uint16_t i = 0; i < pfs->others.count; i++) {
+		if(i != pfs->others.index_self && pfs->others.array[i].state == BCSCLST_PLAYING) {
+			BCSCLIENT_PUBLIC enemy = pfs->others.array[i];
+			wmove(stdscr, enemy.position.y, enemy.position.x);
+			wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
+			winsch(stdscr, dirchar[enemy.direction]);
+			wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
+		}
+	}
+	pthread_mutex_unlock(&pfs->mutex_self);
 	nassert(wnoutrefresh(stdscr));
 
 	// эта панелька наложится поверх карты

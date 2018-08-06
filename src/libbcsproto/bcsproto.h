@@ -34,8 +34,8 @@
 #define BCSSERVER_DEFAULT_PORT 2018
 
 // port for broadcast messages
-// do NOT broadcast to the same port as the game defaults to
-// to avoid manual beacon filtering
+// do broadcast to the same port as the game defaults to
+// there's nothing bad cuz we have to bind to broadcast addr to receive beacons
 #define BCSSERVER_BCAST_PORT BCSSERVER_DEFAULT_PORT
 
 // max size of data structures for client list
@@ -148,7 +148,7 @@ typedef enum __bcsreply_type {
 // possible states of client
 typedef enum __bcsclient_state {
 // error? initial state?
-	  BCSCLST_FREESLOT, BCSCLST_STANDALONE
+	  BCSCLST_FREESLOT, BCSCLST_STANDALONE = BCSCLST_FREESLOT
 // registered on the server but downloading map, for ex. and don't receive announces
 	, BCSCLST_CONNECTING
 // receives announces but not playing, spectator mode

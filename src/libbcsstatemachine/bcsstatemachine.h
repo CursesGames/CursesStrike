@@ -8,6 +8,7 @@
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsmap/bcsmap.h"
 #include "../libvector/vector.h"
+#include "../liblinkedlist/linkedlist.h"
 
 // тупой C требует указания типа объекта, с**а
 typedef struct sockaddr_in sockaddr_in;
@@ -19,7 +20,8 @@ typedef struct {
 	BCSCLIENT_PUBLIC self;
 	BCSCLIENT_PUBLIC_EXT self_ext;
 	struct {
-		uint32_t count;
+		uint16_t count;
+		uint16_t index_self;
 		BCSCLIENT_PUBLIC array[BCSSERVER_MAXCLIENTS];
 	} others;
 	pthread_mutex_t mutex_self; // this struct data exclusive access
@@ -48,6 +50,7 @@ typedef struct {
 	BCSMAP map;
 // объекты изменившие вид карты: разрушенные ящики, пули могут храниться здесь
 	BCSMAP map_overlay;
+	LINKED_LIST bullets;
 // количество фреймов сервера, для статистики какой-нибудь
 	size_t frames;
 // текущее количество подключенных клиентов, чтобы каждый раз не гонять массив
