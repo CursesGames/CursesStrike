@@ -29,9 +29,9 @@ last-config:
 	@(echo [i] Compiler is $(CC), linker is $(LD), configuration is $(CONFIG) && \
 	echo [i] CFLAGS are: $(CFLAGS) && \
 	echo [i] LDFLAGS are: $(LDFLAGS)) > "$(ROOTDIR)/make.config.now"
-	@cat "$(ROOTDIR)/make.config.now"
-	@(! test -f "$(ROOTDIR)/make.config.prev") || diff -N "$(ROOTDIR)/make.config.prev" "$(ROOTDIR)/make.config.now" > /dev/null 2> /dev/null \
-	|| (tput setaf 3 && echo "Configuration changed (code $$?), running clean" && tput sgr 0 && echo "$(MAKE) -$(MKFLG)" clean )
+	@if [[ $$SILENCE_IS_GOLDEN -ne 1 ]] ; then cat "$(ROOTDIR)/make.config.now" ; fi
+	@((! test -f "$(ROOTDIR)/make.config.prev") || diff -N "$(ROOTDIR)/make.config.prev" "$(ROOTDIR)/make.config.now" > /dev/null 2> /dev/null \
+	|| (export RET=$$? && tput setaf 3 && echo "Configuration changed (code $$RET), running clean" && tput sgr 0 && $(MAKE) -$(MKFLG) clean ))
 	@cp -f "$(ROOTDIR)/make.config.now" "$(ROOTDIR)/make.config.prev"
 
 subdirs: last-config
