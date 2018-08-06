@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <alloca.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include <sys/types.h>
 #include <sys/epoll.h>
@@ -25,6 +26,7 @@
 #include "../libbcsmap/bcsmap.h"
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsstatemachine/bcsstatemachine.h"
+#include "../liblinkedlist/linkedlist.h"
 
 // listen backlog size of TCP socket
 #define LISTEN_NUM 16
@@ -127,11 +129,9 @@ stop_broadcast:
 }
 
 /* Thread[1] function - send announces to clients */
-void *send_announces(void *argv) {
+void send_announces(sigval_t argv) {
 	// извлекаем полное состояние
-	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
-
-	int u_fd = state->sock_u;
+	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)(argv.sival_ptr);
 
 	// https://www.viva64.com/ru/w/v505/
 	// Do not call the alloca() function inside loops
@@ -145,69 +145,79 @@ void *send_announces(void *argv) {
 
 	repl->type = BCSREPLT_ANNOUNCE;
 
-    while(true) {
-		// берём снимок состояния и работаем над ним
-		// 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
-		// за это время другой поток может сделать с состоянием что-нибудь важное
-		pthread_mutex_lock(&state->mutex_self);
-        uint16_t player_count = state->player_count;
-		BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
-		memcpy(state_snap, state->client, sizeof(state->client));
-		++(state->frames);
-		pthread_mutex_unlock(&state->mutex_self);
+	// берём снимок состояния и работаем над ним
+	// 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
+	// за это время другой поток может сделать с состоянием что-нибудь важное
+	pthread_mutex_lock(&state->mutex_self);
+	int u_fd = state->sock_u;
+	if(state->bullets.count > 0) {
+		// обработать пули
+		LINKED_LIST_ENTRY *lle;
+		LIST_VALTYPE *bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
+		while(bullet_ptr != NULL) {
+			// tornem, commit faster, oh pleeease
+			// bullet_ptr->ptr is a pointer to BULLET structure
+			// there will be something like:
+			// if(!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
+			//     bullet_ptr = linkedlist_throw(&state->bullets, &lle);
+			// }
+			// else {
+			//     bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
+			// }
+		}
+	}
+    uint16_t player_count = state->player_count;
+	BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
+	++(state->frames);
+	memcpy(state_snap, state->client, sizeof(state->client));
+	pthread_mutex_unlock(&state->mutex_self);
 
-		if(player_count > 0) {
-			BCSCLIENT_PUBLIC *arr_ptr = array;
-			int n = 0;
-			// lookup all slots
-			// include only registered (non-empty slots)
+	if(player_count > 0) {
+		BCSCLIENT_PUBLIC *arr_ptr = array;
+		int n = 0;
+		// lookup all slots
+		// include only registered (non-empty slots)
+		// send to actively interacting
+        for(int i = 0; i < CLIENTS_NUM; i++) {
+			BCSCLIENT *cl_ptr = &state_snap[i];
+			// include only registered (non-empty slots), this slot is empty
+			if(cl_ptr->public_info.state == BCSCLST_STANDALONE)
+				continue;
+
+			// copy struct
+			*arr_ptr = cl_ptr->public_info;
+
+			++arr_ptr;
+			++n;
+		}
+		// должно сойтись
+		lassert(n == player_count);
+
+		ann->count = player_count;
+		size_t annlen =	  sizeof(BCSMSGREPLY)
+						+ sizeof(BCSMSGANNOUNCE) 
+						+ sizeof(BCSCLIENT_PUBLIC) * player_count;
+		// для прикола проштампуем пакет
+		bcsproto_new_packet((BCSMSG*)repl);
+		n = 0;
+		// lookup all slots
+        for(int i = 0; i < CLIENTS_NUM; i++) {
+			BCSCLIENT *cl_ptr = &state_snap[i];
+			// assume that state machine is OK
+			// and none of these states possible without good endpoint
 			// send to actively interacting
-            for(int i = 0; i < CLIENTS_NUM; i++) {
-				BCSCLIENT *cl_ptr = &state_snap[i];
-				// include only registered (non-empty slots), this slot is empty
-				if(cl_ptr->public_info.state == BCSCLST_STANDALONE)
-					continue;
-
-				// copy struct
-				*arr_ptr = cl_ptr->public_info;
-
-				++arr_ptr;
+            if(
+	               cl_ptr->public_info.state == BCSCLST_CONNECTED
+				|| cl_ptr->public_info.state == BCSCLST_PLAYING
+				|| cl_ptr->public_info.state == BCSCLST_RESPAWNING
+            ) { // if clients[i] is not NULL
+                ann->index_self = n;
+				__syscall(sendto(u_fd, repl, annlen, 0
+	                , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in)));
 				++n;
-			}
-			// должно сойтись
-			lassert(n == player_count);
-
-			ann->count = player_count;
-			size_t annlen =	  sizeof(BCSMSGREPLY)
-							+ sizeof(BCSMSGANNOUNCE) 
-							+ sizeof(BCSCLIENT_PUBLIC) * player_count;
-			// для прикола проштампуем пакет
-			bcsproto_new_packet((BCSMSG*)repl);
-			n = 0;
-			// lookup all slots
-            for(int i = 0; i < CLIENTS_NUM; i++) {
-				BCSCLIENT *cl_ptr = &state->client[i];
-				// assume that state machine is OK
-				// and none of these states possible without good endpoint
-				// send to actively interacting
-                if(
-		               cl_ptr->public_info.state == BCSCLST_CONNECTED
-					|| cl_ptr->public_info.state == BCSCLST_PLAYING
-					|| cl_ptr->public_info.state == BCSCLST_RESPAWNING
-                ) { // if clients[i] is not NULL
-                    ann->index_self = n;
-					sendto(u_fd, repl, annlen, 0
-		                , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in));
-					++n;
-                }
             }
         }
-        usleep(33333);
     }
-    // Unreachable code
-    // It will be neccessary before servers abnornal termination
-	// ReSharper disable once CppUnreachableCode
-    return NULL;
 }
 
 void *serve_map(void *argv) {
@@ -383,14 +393,33 @@ int main(int argc, char **argv) {
 
 	// create thread for broadcast
     lassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr, send_broadcast, NULL) == 0);
-	// create thread for announces
-    lassert(pthread_create(&threads[THREAD_UDP_ANNOUNCE], &attr, send_announces, &state) == 0);
 
 	// Str1ker, 06.08.2018
 	// create thread for current map serving
 	lassert(pthread_create(&threads[THREAD_TCP_MAP], &attr, serve_map, &state) == 0);
 	// create thread for our great state machine!
 	lassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr, state_machine, &state) == 0);
+
+	// create thread for announces
+	// Str1ker, 06.08.2018: replace thread to system monotonic clock timer
+    //lassert(pthread_create(&threads[THREAD_UDP_ANNOUNCE], &attr, send_announces, &state) == 0);
+	struct sigevent sgv = {
+		  .sigev_notify = SIGEV_THREAD
+		, .sigev_value = { .sival_ptr = &state }
+		, .sigev_signo = SIGALRM
+		, .sigev_notify_function = send_announces
+        , .sigev_notify_attributes = 0
+	};
+	timer_t timer_id;
+	int timer_fd;
+	__syscall(timer_fd = timer_create(CLOCK_MONOTONIC, &sgv, &timer_id));
+	struct itimerspec t_interval = { // 30 fps
+		  .it_interval = { .tv_sec = 0, .tv_nsec = 33333333 }
+		, .it_value    = { .tv_sec = 0, .tv_nsec = 33333333 }
+	};
+	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));
+
+	usleep(100000);
 
 	// accept commands from stdin
 	char buf[PATH_MAX];

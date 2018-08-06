@@ -5,8 +5,8 @@ LDFLAGS_LOCAL :=
 
 LOCAL_HEADERS := $(wildcard *.h)
 LOCAL_SOURCES := $(wildcard *.c)
-LOCAL_STATIC_DEPENDENCIES := liblinux_util.a libbcsmap.a libbcsproto.a libbcsstatemachine.a libvector.a
-LOCAL_SHARED_DEPENDENCIES := pthread
+LOCAL_STATIC_DEPENDENCIES := liblinux_util.a libbcsmap.a libbcsproto.a libbcsstatemachine.a libvector.a liblinkedlist.a
+LOCAL_SHARED_DEPENDENCIES := pthread rt
 LOCAL_MODULE := csds.exe
 
 include $(BUILD_EXECUTABLE)

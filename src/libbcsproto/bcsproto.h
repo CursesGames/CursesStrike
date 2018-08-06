@@ -206,8 +206,8 @@ typedef struct {
 typedef union {
 	int64_t long_p;
 	struct {
-		int32_t int_lo;
-		int32_t int_hi;
+		int32_t int_lo; // первый параметр
+		int32_t int_hi; // второй параметр
 	} ints;
 	uint8_t bytes[8];
 } BCSMSGPARAM;

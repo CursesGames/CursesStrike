@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include <stddef.h>
 
 typedef union {
 	uint64_t lng;
@@ -28,11 +30,13 @@ typedef struct __linked_list {
 	size_t count;
 } LINKED_LIST;
 
-void dcl_init(LINKED_LIST *dcl);
-bool dcl_push_back(LINKED_LIST *dcl, LIST_VALTYPE *entry);
-void dcl_clear(LINKED_LIST *dcl);
-void dcl_remove(LINKED_LIST *dcl, LINKED_LIST_ENTRY **ptr);
-LIST_VALTYPE *dcl_next_r(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur);
-LIST_VALTYPE *dcl_at(LINKED_LIST *dcl, size_t index);
+void linkedlist_init(LINKED_LIST *dcl);
+bool linkedlist_push_back(LINKED_LIST *dcl, LIST_VALTYPE entry);
+void linkedlist_clear(LINKED_LIST *dcl);
+// Remove from `dcl' by `ptr' using ptr->prev and ptr->next
+// This is an angry replacement to `linkedlist_next_r' call
+LIST_VALTYPE *linkedlist_throw(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur);
+LIST_VALTYPE *linkedlist_next_r(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur);
+LIST_VALTYPE *linkedlist_at(LINKED_LIST *dcl, size_t index);
 
-void dcl_quick_sort(LINKED_LIST *dcl, int(*comparator)(LIST_VALTYPE*, LIST_VALTYPE*));
+void linkedlist_quick_sort(LINKED_LIST *dcl, int(*comparator)(LIST_VALTYPE*, LIST_VALTYPE*));

@@ -48,6 +48,11 @@ ifeq ($(CONFIG),release)
 CFLAGS += -O3 -g -D NDEBUG=1 -D RELEASE=1
 endif
 
+# dirty fix for visual studio
+ifeq ($(CONFIG),Debug)
+CONFIG := debug
+endif
+
 ifeq ($(CONFIG),debug)
 CFLAGS += -O0 -ggdb -ffunction-sections -D DEBUG=1
 CFLAGS += -D VALGRIND_SUCKS

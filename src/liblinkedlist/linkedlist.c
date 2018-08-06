@@ -7,18 +7,18 @@
 #define max(a,b) ((a) > (b) ? (a) : (b))
 #endif
 
-void dcl_init(LINKED_LIST *dcl) {
+void linkedlist_init(LINKED_LIST *dcl) {
 	dcl->head = NULL;
 	dcl->tail = NULL;
 	dcl->count = 0;
 }
 
 // O(1)
-bool dcl_push_back(LINKED_LIST *dcl, LIST_VALTYPE *entry) {
+bool linkedlist_push_back(LINKED_LIST *dcl, LIST_VALTYPE entry) {
 	LINKED_LIST_ENTRY *dce = (LINKED_LIST_ENTRY*)malloc(sizeof(LINKED_LIST_ENTRY));
 	if(dce == NULL)
 		return false;
-	dce->value = *entry;
+	dce->value = entry;
 	dce->next = NULL; // avoid loop
 
 	if (dcl->head == NULL) {
@@ -37,25 +37,64 @@ bool dcl_push_back(LINKED_LIST *dcl, LIST_VALTYPE *entry) {
 }
 
 // O(n)
-void dcl_clear(LINKED_LIST *dcl) {
+void linkedlist_clear(LINKED_LIST *dcl) {
 	LINKED_LIST_ENTRY *cur = dcl->head;
 	while(cur != NULL) {
 		LINKED_LIST_ENTRY *next = cur->next;
 		free(cur);
 		cur = next;
 	}
-	dcl_init(dcl);
+	linkedlist_init(dcl);
 }
 
 // Should be O(1)
-void dcl_remove(LINKED_LIST *dcl, LINKED_LIST_ENTRY **ptr) {
-	
+LIST_VALTYPE *linkedlist_throw(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur) {
+	// ох, эта магия кода в час ночи. но я всё объясню.
+
+	// 1. не морщим список, если нам сунули пустой указатель
+	if(*cur == NULL)
+		return NULL;
+
+	// сохраняем указатели на предыдущее звено и текущее звено
+	// пока не разыменовывая сами указатели
+	LINKED_LIST_ENTRY *prev = (*cur)->prev;
+	LINKED_LIST_ENTRY *next = (*cur)->next;
+
+	// если предыдущее звено существует, то заставляем его указывать на следующее после нашего
+	if (prev != NULL) 
+		prev->next = next;
+	// если же нет, то мы пытаемся удалить первый элемент - нужно изменить указатель головы списка
+	else
+		dcl->head = next;
+
+	// та же хня с последним элементом
+	if (next != NULL)
+		next->prev = prev;
+	else
+		dcl->tail = prev;
+
+	// очень надеемся, что прежде чем запросить удаление звена, 
+	// чувак освободил память по указателю внутри звена
+	// иначе ему кранты от бога Валгринда!
+	free(*cur);
+	// эта функция аналогична обычному перемещению, только ещё и звенья удаляет
+	// так что текущим звеном становится следующее для текущего
+	*cur = next;
+	// наконец декрементируем счётчик элементов
+	--(dcl->count);
+
+	// и если уж мы удалили не последний элемент, то нужно вернуть значение
+	// ради которого все эти звенья и создавались
+	if(*cur == NULL) {
+		return NULL;
+	}
+	return &((*cur)->value);
 }
 
 // Single take, O(1)
 // Reentrant version.
 // Useful when not iterating over all, to avoid leaving non-NULL cur pointer.
-LIST_VALTYPE *dcl_next_r(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur) {
+LIST_VALTYPE *linkedlist_next_r(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur) {
 	if (*cur == NULL) {
 		*cur = dcl->head;
 	}
@@ -83,7 +122,7 @@ LIST_VALTYPE *dcl_at_core(LINKED_LIST_ENTRY *dce, size_t index) {
 	return &(dce->value);
 }
 
-LIST_VALTYPE *dcl_at(LINKED_LIST *dcl, size_t index) {
+LIST_VALTYPE *linkedlist_at(LINKED_LIST *dcl, size_t index) {
 	if(index >= dcl->count)
 		return NULL;
 	return dcl_at_core(dcl->head, index);
@@ -123,6 +162,6 @@ void dcl_quick_sort_core(LINKED_LIST_ENTRY *head, LINKED_LIST_ENTRY *tail, ssize
 }
 
 // In-place quicksort of double linked list
-void dcl_quick_sort(LINKED_LIST *dcl, int(*comparator)(LIST_VALTYPE*, LIST_VALTYPE*)) {
+void linkedlist_quick_sort(LINKED_LIST *dcl, int(*comparator)(LIST_VALTYPE*, LIST_VALTYPE*)) {
 	dcl_quick_sort_core(dcl->head, dcl->tail, dcl->count, comparator);
 }
