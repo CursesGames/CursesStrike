@@ -78,7 +78,7 @@ void *send_broadcast(void *argv) {
 		iface->broadcast_fd = sock;
 		iface->bc_addr = sin;
 
-		__vector_val_t val = { .ptr = iface };
+		VECTOR_VALTYPE val = { .ptr = iface };
 		lassert(vector_push_back(&ifaces, val));
 
         ALOGD("Beacons will be sent to %s:%hu\n", inet_ntoa(sin.sin_addr), be16toh(sin.sin_port));
@@ -105,7 +105,7 @@ next_iface:
     };
 
 	size_t n = ifaces.size;
-	__vector_val_t *array = vector_array_ptr(&ifaces);
+	VECTOR_VALTYPE *array = vector_array_ptr(&ifaces);
     while(true) {
         for(size_t i = 0; i < n; i++) {
 			struct bc_data *iface = array[i].ptr;

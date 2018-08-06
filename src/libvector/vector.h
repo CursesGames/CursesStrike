@@ -24,12 +24,12 @@
 typedef union __vector_val_t {
 	uint64_t lng;
 	void *ptr;
-} VECTOR_VALUETYPE;
+} VECTOR_VALTYPE;
 
 // A simple array-like collection with ability to grow, containing (by default) pointer-size integers
 typedef struct __vector {
 // pointer to internal array
-	__vector_val_t *array;
+	VECTOR_VALTYPE *array;
 // actual count of items
 	size_t size;
 // reserved count
@@ -41,12 +41,12 @@ typedef struct __vector {
 // Initializes vector, allocating memory ahead for `initial_capacity' elems
 bool vector_init(VECTOR *vect, size_t initial_capacity);
 // Pushes `value' to the end of vector. Value is _copied_.
-bool vector_push_back(VECTOR *vect, __vector_val_t value);
+bool vector_push_back(VECTOR *vect, VECTOR_VALTYPE value);
 // Copies value from the end of vector and decrement size
-bool vector_pop_back(VECTOR *vect, __vector_val_t *out_value);
+bool vector_pop_back(VECTOR *vect, VECTOR_VALTYPE *out_value);
 // Cut unoccupied memory
 bool vector_shrink_to_fit(VECTOR *vect);
 // Returns pointer to array of items
-__vector_val_t *vector_array_ptr(VECTOR *vect);
+VECTOR_VALTYPE *vector_array_ptr(VECTOR *vect);
 // Free memory (without zeroing out size and capacity)
 void vector_free(VECTOR *vect);

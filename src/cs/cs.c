@@ -100,7 +100,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 			logprint(ANSI_CLRST);
 
 			// add to vector
-			__vector_val_t vval = { .lng = un._vval };
+			VECTOR_VALTYPE vval = { .lng = un._vval };
 			lassert(vector_push_back(ipv4_faces, vval));
 			count++;
 
@@ -492,7 +492,7 @@ start_bcast_scan:
 				}
 			}
 
-			__vector_val_t vval = { .lng = srv_new._vval };
+			VECTOR_VALTYPE vval = { .lng = srv_new._vval };
 			lassert(vector_push_back(&servers, vval));
 			lassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
 			printf("\t%s:%hu\t%.*s - %u\n"

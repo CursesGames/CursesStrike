@@ -20,7 +20,7 @@ void *__force_realloc(void *ptr, size_t size) {
 #endif
 
 bool vector_init(VECTOR *vect, size_t initial_capacity) {
-	if((vect->array = (__vector_val_t*)malloc(sizeof(__vector_val_t) * initial_capacity)) == NULL)
+	if((vect->array = (VECTOR_VALTYPE*)malloc(sizeof(VECTOR_VALTYPE) * initial_capacity)) == NULL)
 		return false;
 	vect->_growth_factor = VECTOR_GROWTH_FACTOR;
 	vect->size = 0;
@@ -33,7 +33,7 @@ bool vector_resize(VECTOR *vect, size_t new_capacity) {
 		return true; // nothing to be done
 	if(new_capacity == 0) // чтобы не был совсем уж пустой вектор, это вызывает ошибку realloc
 		new_capacity = 1;
-	void *mem = realloc(vect->array, sizeof(__vector_val_t) * new_capacity);
+	void *mem = realloc(vect->array, sizeof(VECTOR_VALTYPE) * new_capacity);
 	if(mem == NULL)
 		return false; // could not realloc
 	vect->array = mem;
@@ -41,7 +41,7 @@ bool vector_resize(VECTOR *vect, size_t new_capacity) {
 	return true;
 }
 
-bool vector_push_back(VECTOR *vect, __vector_val_t value) {
+bool vector_push_back(VECTOR *vect, VECTOR_VALTYPE value) {
 	if(vect->size >= vect->capacity) {
 		if(!vector_resize(vect, max(vect->size + 1, vect->capacity * vect->_growth_factor / 1024)))
 			return false;
@@ -51,7 +51,7 @@ bool vector_push_back(VECTOR *vect, __vector_val_t value) {
 	return true;
 }
 
-bool vector_pop_back(VECTOR *vect, __vector_val_t *out_value) {
+bool vector_pop_back(VECTOR *vect, VECTOR_VALTYPE *out_value) {
 	if(vect->size == 0)
 		return false;
 	--vect->size;
@@ -67,7 +67,7 @@ bool vector_shrink_to_fit(VECTOR *vect) {
 	return true;
 }
 
-__vector_val_t *vector_array_ptr(VECTOR *vect) {
+VECTOR_VALTYPE *vector_array_ptr(VECTOR *vect) {
 	return vect->array;
 }
 
