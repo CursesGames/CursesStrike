@@ -5,7 +5,6 @@
 
 #include <stdbool.h>
 #include <ncursesw/ncurses.h> // just to export window type, nothing personal
-#include <pthread.h>
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsmap/bcsmap.h"
 #include "../libvector/vector.h"
@@ -18,9 +17,10 @@ typedef struct sockaddr sockaddr;
 // структура состояния клиента на клиенте
 typedef struct {
 	BCSCLIENT_PUBLIC self;
+	BCSCLIENT_PUBLIC_EXT self_ext;
 	struct {
 		uint32_t count;
-		BCSCLIENT_PUBLIC *array;
+		BCSCLIENT_PUBLIC array[BCSSERVER_MAXCLIENTS];
 	} others;
 	pthread_mutex_t mutex_self; // this struct data exclusive access
 	pthread_mutex_t mutex_frame; // ncurses view exclusive access

@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <endian.h>
 
 #include "bcsstatemachine.h"
@@ -17,9 +18,9 @@ bool bcsstatemachine_process_request(
         return false;
     }
 
-    BCSMSGREPLY *reply; //reply to client
+    BCSMSGREPLY reply; //reply to client
     int id = search_client(state, src); // client id in array
-    reply->packet_no = msg->packet_no; // packet to send number
+    reply.packet_no = msg->packet_no; // packet to send number
 
     pthread_mutex_lock(&state->mutex_self);
     int u_fd = state->sock_u; // copy descriptor from state
@@ -33,18 +34,18 @@ bool bcsstatemachine_process_request(
                 // Add client to array
                 switch(add_client(state, src)){
                     case -1: // clients limit is settled
-                        reply->type = htobe32(BCSREPLT_NACK);
+                        reply.type = htobe32(BCSREPLT_NACK);
                         break;
 
                     default:
                         pthread_mutex_lock(&state->mutex_self);
                         state->client[id].public_info.state = BCSCLST_CONNECTING;
                         pthread_mutex_unlock(&state->mutex_self);
-                        reply->type = htobe32(BCSREPLT_MAP);
+                        reply.type = htobe32(BCSREPLT_MAP);
                         log_print_cl_info(state);
                 }
-                __syscall(gettimeofday(&(reply->time_gen), NULL));
-                __syscall(sendto(u_fd, reply, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &src, sizeof(sockaddr_in)));
+                __syscall(gettimeofday(&(reply.time_gen), NULL));
+                __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 0, (sockaddr*)src, sizeof(sockaddr_in)));
             }
             break;
             
@@ -62,9 +63,9 @@ bool bcsstatemachine_process_request(
             pthread_mutex_lock(&state->mutex_self);
             delete_client(state, src);
             pthread_mutex_unlock(&state->mutex_self);
-            reply->type = htobe32(BCSREPLT_ACK);
-            __syscall(gettimeofday(&(reply->time_gen), NULL));
-            __syscall(sendto(u_fd, reply, sizeof(BCSMSGREPLY), 0, (struct sockaddr *) &src, sizeof(sockaddr_in)));
+            reply.type = htobe32(BCSREPLT_ACK);
+            __syscall(gettimeofday(&(reply.time_gen), NULL));
+            __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
 
         case BCSACTION_MOVE:
@@ -72,7 +73,7 @@ bool bcsstatemachine_process_request(
             if(state->client[id].public_info.state == BCSCLST_PLAYING){
                 x = state->client[id].public_info.position.x;
                 y = state->client[id].public_info.position.y;
-                switch(be32toh(msg->un.ints.int_lo)){
+                switch(be32toh(msg->un.ints.int_lo)) {
                     case BCSDIR_LEFT:
                         x--;
                         if((x != 0)

@@ -29,8 +29,10 @@ bool vector_init(VECTOR *vect, size_t initial_capacity) {
 }
 
 bool vector_resize(VECTOR *vect, size_t new_capacity) {
-	//if(new_capacity <= vect->capacity)
-	//	return true; // already have
+	if(new_capacity == vect->capacity)
+		return true; // nothing to be done
+	if(new_capacity == 0) // чтобы не был совсем уж пустой вектор, это вызывает ошибку realloc
+		new_capacity = 1;
 	void *mem = realloc(vect->array, sizeof(__vector_val_t) * new_capacity);
 	if(mem == NULL)
 		return false; // could not realloc

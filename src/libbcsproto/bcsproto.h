@@ -34,7 +34,8 @@
 #define BCSSERVER_DEFAULT_PORT 2018
 
 // port for broadcast messages
-// broadcast to the same port as the game defaults to
+// do NOT broadcast to the same port as the game defaults to
+// to avoid manual beacon filtering
 #define BCSSERVER_BCAST_PORT BCSSERVER_DEFAULT_PORT
 
 // max size of data structures for client list

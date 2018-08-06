@@ -1,6 +1,6 @@
 include $(BUILD_INITIALIZE)
 
-CFLAGS_LOCAL := -std=c99
+CFLAGS_LOCAL := -std=gnu99
 
 LOCAL_HEADERS := $(wildcard *.h)
 LOCAL_SOURCES := $(wildcard *.c)

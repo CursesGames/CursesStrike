@@ -6,9 +6,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include <locale.h>
+#include <string.h>
 #include <ncursesw/ncurses.h>
 
 #include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <ifaddrs.h>
@@ -31,6 +33,8 @@
 #define BCSIFACES_APPROX 3
 // assume no more than 10 good servers by default
 #define BCSSERVERS_APPROX 10
+// connect datagrams will be resent this times
+#define BCSCONNECT_RETRIES 10
 
 // WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
@@ -61,6 +65,8 @@ typedef enum {
 const char dirchar[] = { '<', '>', '^', 'v' };
 
 typedef BCSBEACON BCAST_SRV;
+
+void draw_window(BCSPLAYER_FULL_STATE *pfs);
 
 // Создаёт вектор интерфейсов. Вектор должен быть неинициализированным
 size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
@@ -132,12 +138,21 @@ void *receiver_func(void *argv) {
 			continue;
 		}
 
+		bool need_redraw = true;
 		// на время обработки принятого сообщения блокируем состояние
 		pthread_mutex_lock(&pfs->mutex_self);
 		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
 		switch(be32toh(repl->type)) {
 			case BCSREPLT_ANNOUNCE:
 				ALOGI("Received announce\n");
+				BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
+				BCSCLIENT_PUBLIC *players = (BCSCLIENT_PUBLIC*)(ann + 1);
+				pthread_mutex_lock(&pfs->mutex_self);
+				// copy self state
+				pfs->self = players[ann->index_self];
+				pfs->others.count = ann->count;
+				memcpy(&pfs->others.array, players, sizeof(BCSCLIENT_PUBLIC) * ann->count);
+				pthread_mutex_unlock(&pfs->mutex_self);
 			break;
 
 			case BCSREPLT_EMERGENCY:
@@ -168,6 +183,9 @@ void *receiver_func(void *argv) {
 		}
 		pthread_mutex_unlock(&pfs->mutex_self);
 
+		if(need_redraw) {
+			draw_window(pfs);
+		}
 	}
 
 	// ReSharper disable once CppUnreachableCode
@@ -257,7 +275,7 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 
 	// TODO: sendto()
 	bcsproto_new_packet(&msg);
-	sendto2(pfs->sockfd, &msg, sizeof(msg), 0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
+	sendto(pfs->sockfd, &msg, sizeof(msg), 0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
 }
 
 void draw_window(BCSPLAYER_FULL_STATE *pfs) {
@@ -347,9 +365,13 @@ int main(int argc, char **argv) {
 				, .y = 0
 			  }
 		  }
+		, .self_ext = {
+			  .frags = 0
+			, .deaths = 0
+			, .nickname = "Unknown Soldier"
+		  }
 		, .others = {
 			  .count = 0
-			, .array = NULL
 		  }
 		, .map = { // DONE: intialize right <- there
 			  .width = 0
@@ -541,17 +563,32 @@ next_epevent:
 	BCSMSG msg = {
 		  .action = htobe32(BCSACTION_CONNECT)
 	};
-	bcsproto_new_packet(&msg);
-	// TODO: use sendto2
-	sysassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
-		, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
-	VERBOSE logprint("OK.\n");
 
 	ssize_t rcvd;
 	struct sockaddr_in sin_src;
 	socklen_t src_alen = sizeof(sin_src);
+	size_t retries = 0;
 	while(true) {
-		__syscall(rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen));
+		if (retries >= BCSCONNECT_RETRIES) {
+			VERBOSE logprint("\n");
+			ALOGE("Connection failed: server does not respond\n");
+			goto connect_leave;
+		}
+
+		bcsproto_new_packet(&msg);
+		lassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
+			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
+		rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
+		if(rcvd == -1) {
+			if (errno == EAGAIN) {
+				VERBOSE logprint("#");
+				++retries;
+				continue;
+			}
+			else
+				__syscall(-1);
+		}
+
 		if(    sin_src.sin_addr.s_addr != pfs.endpoint.sin_addr.s_addr
 			|| sin_src.sin_port        != pfs.endpoint.sin_port
 		) {
@@ -567,15 +604,19 @@ next_epevent:
 		}
 
 		if(be32toh(repl->type) != BCSREPLT_MAP) {
-			ALOGD("Reply type mismatch (expecting %u, got %u), skipping\n"
+			ALOGE("Reply type mismatch (expecting %u, got %u), exiting\n"
 				, BCSREPLT_MAP, be32toh(repl->type));
-			continue;
+			goto connect_leave;
 		}
 
 		// if we are there: source matches, packet no and reply type too
+		VERBOSE logprint("OK.\n");
 		break;
 	}
 
+	// буду строг к себе в соблюдении состояний
+	// ReSharper disable once CppAssignedValueIsNeverUsed
+	pfs.self.state = BCSCLST_CONNECTING;
 	VERBOSE ALOGV("Server told to download the map.\n");
 	VERBOSE ALOGD("Connecting to the TCP socket... ");
 	int sock_tcp;
@@ -600,10 +641,26 @@ next_epevent:
 	msg.action = htobe32(BCSACTION_CONNECT2);
 	bcsproto_new_packet(&msg);
 	VERBOSE ALOGV("Sending CONNECT2... ");
-	sysassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
-		, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
+
 	while(true) {
-		__syscall(rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen));
+		bcsproto_new_packet(&msg);
+		lassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
+			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
+		rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
+		if(rcvd == -1) {
+			if (errno == EAGAIN) {
+				VERBOSE logprint("#");
+				++retries;
+				if (retries >= BCSCONNECT_RETRIES) {
+					VERBOSE logprint("\n");
+					ALOGE("Connection failed: server does not respond\n");
+					goto connect_leave;
+				}
+				continue;
+			}
+			else
+				__syscall(-1);
+		}
 		if(    sin_src.sin_addr.s_addr != pfs.endpoint.sin_addr.s_addr
 			|| sin_src.sin_port        != pfs.endpoint.sin_port
 		) {
@@ -630,6 +687,7 @@ next_epevent:
 	VERBOSE logprint("OK.\n");
 
 	// прелюдия закончена, мы должны быть на сервере.
+	pfs.self.state = BCSCLST_CONNECTED;
 	// перенаправляем лог в файл
 	sysassert(freopen("cs_client.log", "w", stderr) != NULL);
 
@@ -676,6 +734,8 @@ next_epevent:
 		, .it_value    = { .tv_sec = 0, .tv_nsec = 33333333 }
 	};
 	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));*/
+	pthread_t receiver_thread;
+	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
 	while(true) {
 		/////////////////////////
@@ -728,6 +788,8 @@ next_epevent:
 loop_leave:
 	curs_set(true);
 	endwin();
+
+connect_leave:
 
 	return 0;
 }
