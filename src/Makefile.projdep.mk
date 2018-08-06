@@ -6,5 +6,5 @@ libncurses_util: liblinux_util
 liblinux_util: 
 libbcsmap: liblinux_util
 libbcsproto: liblinux_util
-libbcsstatemachine: liblinux_util libbcsproto
+libbcsstatemachine: liblinux_util libbcsproto libbcsmap
 libvector: 

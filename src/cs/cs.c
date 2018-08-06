@@ -340,7 +340,7 @@ int main(int argc, char **argv) {
 		, .mutex_frame = PTHREAD_MUTEX_INITIALIZER
 		, .mutex_sock  = PTHREAD_MUTEX_INITIALIZER
 		, .self = { 
-			  .state = BCSCLST_UNDEF
+			  .state = BCSCLST_STANDALONE
 			, .direction = BCSDIR_UP
 			, .position= {
 				  .x = 0

@@ -29,9 +29,9 @@ void init_start_xy (BCSSERVER_FULL_STATE *state, uint16_t start_x, uint16_t star
 // With the introduction of special `count' variable
 // this function might become redundant
 uint16_t return_clients_size(BCSSERVER_FULL_STATE *state) {
-    pthread_mutex_lock(&state->mutex_self);
+	pthread_mutex_lock(&state->mutex_self);
     uint16_t num = state->player_count;
-    pthread_mutex_unlock(&state->mutex_self);
+	pthread_mutex_unlock(&state->mutex_self);
 
     return num;
 }

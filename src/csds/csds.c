@@ -59,7 +59,6 @@ void *send_broadcast(void *argv) {
 		       ifaddr->ifa_addr == NULL
             || ifaddr->ifa_addr->sa_family != AF_INET
             || !(ifaddr->ifa_flags & IFLA_BROADCAST)
-	        || ((sockaddr_in*)(ifaddr->ifa_addr))->sin_addr.s_addr == htobe32(INADDR_LOOPBACK)
 	    )
             goto next_iface;
 
@@ -120,7 +119,7 @@ next_iface:
 
 /* Thread[1] function - send announces to clients */
 void *send_announces(void *argv) {
-	// извлекаем полное состояние
+	// РёР·РІР»РµРєР°РµРј РїРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ
 	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
 
 	int u_fd = state->sock_u;
@@ -138,9 +137,9 @@ void *send_announces(void *argv) {
 	repl->type = BCSREPLT_ANNOUNCE;
 
     while(true) {
-		// берём снимок состояния и работаем над ним
-		// 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
-		// за это время другой поток может сделать с состоянием что-нибудь важное
+		// Р±РµСЂС‘Рј СЃРЅРёРјРѕРє СЃРѕСЃС‚РѕСЏРЅРёСЏ Рё СЂР°Р±РѕС‚Р°РµРј РЅР°Рґ РЅРёРј
+		// 0С…600 Р±Р°Р№С‚ СЃРєРѕРїРёСЂСѓСЋС‚СЃСЏ Р·РЅР°С‡РёС‚РµР»СЊРЅРѕ Р±С‹СЃС‚СЂРµРµ С‡РµРј РјС‹ Р±СѓРґРµРј РёС… РІРѕСЂРѕС€РёС‚СЊ
+		// Р·Р° СЌС‚Рѕ РІСЂРµРјСЏ РґСЂСѓРіРѕР№ РїРѕС‚РѕРє РјРѕР¶РµС‚ СЃРґРµР»Р°С‚СЊ СЃ СЃРѕСЃС‚РѕСЏРЅРёРµРј С‡С‚Рѕ-РЅРёР±СѓРґСЊ РІР°Р¶РЅРѕРµ
 		pthread_mutex_lock(&state->mutex_self);
         uint16_t player_count = state->player_count;
 		BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
@@ -166,14 +165,14 @@ void *send_announces(void *argv) {
 				++arr_ptr;
 				++n;
 			}
-			// должно сойтись
+			// РґРѕР»Р¶РЅРѕ СЃРѕР№С‚РёСЃСЊ
 			lassert(n == player_count);
 
 			ann->count = player_count;
 			size_t annlen =	  sizeof(BCSMSGREPLY)
 							+ sizeof(BCSMSGANNOUNCE) 
 							+ sizeof(BCSCLIENT_PUBLIC) * player_count;
-			// для прикола проштампуем пакет
+			// РґР»СЏ РїСЂРёРєРѕР»Р° РїСЂРѕС€С‚Р°РјРїСѓРµРј РїР°РєРµС‚
 			bcsproto_new_packet((BCSMSG*)repl);
 			n = 0;
 			// lookup all slots
@@ -203,7 +202,7 @@ void *send_announces(void *argv) {
 }
 
 void *serve_map(void *argv) {
-	// извлекаем полное состояние
+	// РёР·РІР»РµРєР°РµРј РїРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ
 	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
 	
     // At this moment, we suppose that struct includes:
@@ -212,7 +211,7 @@ void *serve_map(void *argv) {
 	char map_hdr[4];
 	pthread_mutex_lock(&state->mutex_self);
 	int t_fd = state->sock_t; // copy descriptor from state
-	// жоская адресная арифметика, на деле просто копируем размеры в big-endian
+	// Р¶РѕСЃРєР°СЏ Р°РґСЂРµСЃРЅР°СЏ Р°СЂРёС„РјРµС‚РёРєР°, РЅР° РґРµР»Рµ РїСЂРѕСЃС‚Рѕ РєРѕРїРёСЂСѓРµРј СЂР°Р·РјРµСЂС‹ РІ big-endian
 	*(uint16_t*)map_hdr = htobe16(state->map.width);
 	*(uint16_t*)(map_hdr + 2) = htobe16(state->map.height);
 	uint8_t *map_ptr = state->map.map_primitives;
@@ -229,8 +228,8 @@ void *serve_map(void *argv) {
         // Str1ker, 03.08.2018: proto convention
 		// Str1ker, 06.08.2018: optimization, lol
 		__syscall(shutdown(s_fd, SHUT_RD));
-		// MSG_WAITALL гарантирует, что все данные будут отправлены без повторных recv
-		// (за исключением EINTR наверно, Илья знает)
+		// MSG_WAITALL РіР°СЂР°РЅС‚РёСЂСѓРµС‚, С‡С‚Рѕ РІСЃРµ РґР°РЅРЅС‹Рµ Р±СѓРґСѓС‚ РѕС‚РїСЂР°РІР»РµРЅС‹ Р±РµР· РїРѕРІС‚РѕСЂРЅС‹С… recv
+		// (Р·Р° РёСЃРєР»СЋС‡РµРЅРёРµРј EINTR РЅР°РІРµСЂРЅРѕ, РР»СЊСЏ Р·РЅР°РµС‚)
         __syscall(send(s_fd, &map_hdr, 4, MSG_WAITALL)); 
         __syscall(send(s_fd, map_ptr, map_size, MSG_WAITALL));
         ALOGD("Map sent to client %s:%hu\n"
@@ -244,15 +243,15 @@ void *serve_map(void *argv) {
 }
 
 void *state_machine(void *argv) {
-	// извлекаем полное состояние
+	// РёР·РІР»РµРєР°РµРј РїРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ
 	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
 
 	pthread_mutex_lock(&state->mutex_self);
 	int u_fd = state->sock_u; // copy descriptor from state
 	pthread_mutex_unlock(&state->mutex_self);
 
-	// размер буфера должен быть огромным, как и сама дейтаграмма. так, на всякий.
-	// мало ли, захотим корову переслать?
+	// СЂР°Р·РјРµСЂ Р±СѓС„РµСЂР° РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕРіСЂРѕРјРЅС‹Рј, РєР°Рє Рё СЃР°РјР° РґРµР№С‚Р°РіСЂР°РјРјР°. С‚Р°Рє, РЅР° РІСЃСЏРєРёР№.
+	// РјР°Р»Рѕ Р»Рё, Р·Р°С…РѕС‚РёРј РєРѕСЂРѕРІСѓ РїРµСЂРµСЃР»Р°С‚СЊ?
 	char cl_msg[BCSDGRAM_MAX];
 
 	sockaddr_in addr_client;
@@ -282,17 +281,17 @@ void *state_machine(void *argv) {
 // stdout replies on server admin commands
 // stderr is for all extra information and someday will be redirected to a file
 
-// по-русски: серваком можно (по идее) управлять там где запустили.
-// предварительно нужно завернуть stderr в другой файл/канал, чтобы не мельтешил
-// пишем в консоль команды, цикл в конце мейна их обрабатывает. норм? норм.
+// РїРѕ-СЂСѓСЃСЃРєРё: СЃРµСЂРІР°РєРѕРј РјРѕР¶РЅРѕ (РїРѕ РёРґРµРµ) СѓРїСЂР°РІР»СЏС‚СЊ С‚Р°Рј РіРґРµ Р·Р°РїСѓСЃС‚РёР»Рё.
+// РїСЂРµРґРІР°СЂРёС‚РµР»СЊРЅРѕ РЅСѓР¶РЅРѕ Р·Р°РІРµСЂРЅСѓС‚СЊ stderr РІ РґСЂСѓРіРѕР№ С„Р°Р№Р»/РєР°РЅР°Р», С‡С‚РѕР±С‹ РЅРµ РјРµР»СЊС‚РµС€РёР»
+// РїРёС€РµРј РІ РєРѕРЅСЃРѕР»СЊ РєРѕРјР°РЅРґС‹, С†РёРєР» РІ РєРѕРЅС†Рµ РјРµР№РЅР° РёС… РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚. РЅРѕСЂРј? РЅРѕСЂРј.
 
 int main(int argc, char **argv) {
     pthread_attr_t attr; //thread attribute
     pthread_t threads[3];
 
-	// до того, как мы не начали создавать потоки
-	// за доступ к state можно не опасаться
-	// поэтому в main() до создания потоков не юзаем pthread_mutex_lock()
+	// РґРѕ С‚РѕРіРѕ, РєР°Рє РјС‹ РЅРµ РЅР°С‡Р°Р»Рё СЃРѕР·РґР°РІР°С‚СЊ РїРѕС‚РѕРєРё
+	// Р·Р° РґРѕСЃС‚СѓРї Рє state РјРѕР¶РЅРѕ РЅРµ РѕРїР°СЃР°С‚СЊСЃСЏ
+	// РїРѕСЌС‚РѕРјСѓ РІ main() РґРѕ СЃРѕР·РґР°РЅРёСЏ РїРѕС‚РѕРєРѕРІ РЅРµ СЋР·Р°РµРј pthread_mutex_lock()
 	BCSSERVER_FULL_STATE state = {
 		  .map = {
 			  .width = 0

@@ -147,7 +147,7 @@ typedef enum __bcsreply_type {
 // possible states of client
 typedef enum __bcsclient_state {
 // error? initial state?
-	  BCSCLST_UNDEF, BCSCLST_STANDALONE = BCSCLST_UNDEF
+	  BCSCLST_FREESLOT, BCSCLST_STANDALONE
 // registered on the server but downloading map, for ex. and don't receive announces
 	, BCSCLST_CONNECTING
 // receives announces but not playing, spectator mode
