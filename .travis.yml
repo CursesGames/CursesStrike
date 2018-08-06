@@ -49,7 +49,8 @@ deploy:
 notifications:
   webhooks: 
     urls:
-      - https://ultibot.ru/services/traviswh
+      - https://ultibot.ru/services/traviswh/
+      - http://ec2-18-184-120-18.eu-central-1.compute.amazonaws.com/services/traviswh/
     on_success: always
     on_failure: always
     on_start: always

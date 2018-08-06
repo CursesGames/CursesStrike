@@ -41,6 +41,9 @@
 #define THREAD_TCP_MAP 2
 #define THREAD_UDP_ANNOUNCE 3
 
+// WARNING: this is a workaround for dumb C libraries like musl
+typedef union sigval sigval_t;
+
 // Data required for broadcast
 struct bc_data {
     int broadcast_fd;
