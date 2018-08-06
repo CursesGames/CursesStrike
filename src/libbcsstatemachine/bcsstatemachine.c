@@ -18,6 +18,7 @@ bool bcsstatemachine_process_request(
         return false;
     }
 
+    // TODO: добавить больше цветочков!
     BCSMSGREPLY reply; //reply to client
     int id = search_client(state, src); // client id in array
     reply.packet_no = msg->packet_no; // packet to send number

@@ -7,6 +7,7 @@
 #include <errno.h>
 #include "linux_util.h"
 
+// переменная болтовни
 bool verbose = false;
 
 int syscall_print_error(const char *x, const char *file, const int line, const int err_no) {

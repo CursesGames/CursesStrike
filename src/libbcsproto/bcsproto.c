@@ -31,7 +31,7 @@ ssize_t sendto2(
 // This function may transparently do these actions:
 // 1. Packet stamping (packet_no, time_gen)
 // 2. Converting values to BE
-// 3. Packetdup
+// 3. Packetdup (Лёша)
 bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg) {
 	return false;
 }

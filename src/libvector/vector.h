@@ -8,6 +8,7 @@
 // ReSharper disable once CppUnusedIncludeDirective
 #include <stddef.h>
 
+// макросы всем!
 #ifndef min
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #endif
@@ -20,10 +21,10 @@
 #define VECTOR_GROWTH_FACTOR 1536
 
 // Datatype for vector objects
-typedef union {
+typedef union __vector_val_t {
 	uint64_t lng;
 	void *ptr;
-} __vector_val_t;
+} VECTOR_VALUETYPE;
 
 // A simple array-like collection with ability to grow, containing (by default) pointer-size integers
 typedef struct __vector {

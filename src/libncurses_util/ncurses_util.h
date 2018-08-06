@@ -67,5 +67,5 @@ chtype *create_chstr(char *str, int len, chtype attr);
 int mvwaddattrfstr(WINDOW *wnd, int y, int x, int len, char *str, chtype attr);
 
 // read from keyboard with long key codes
-// возвращает 8-байтное число, в котором хранится длинный код символа
+// РІРѕР·РІСЂР°С‰Р°РµС‚ 8-Р±Р°Р№С‚РЅРѕРµ С‡РёСЃР»Рѕ, РІ РєРѕС‚РѕСЂРѕРј С…СЂР°РЅРёС‚СЃСЏ РґР»РёРЅРЅС‹Р№ РєРѕРґ СЃРёРјРІРѕР»Р°
 int64_t raw_wgetch(WINDOW *wnd);

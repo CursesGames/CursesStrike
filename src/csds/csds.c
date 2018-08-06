@@ -53,6 +53,7 @@ void *send_broadcast(void *argv) {
 	lassert(vector_init(&ifaces, BC_FD_NUM));
 
     __syscall(getifaddrs(&ifaddr));
+	struct ifaddrs *ifaddr_head = ifaddr;
 
     while(ifaddr != NULL) {
         if(
@@ -86,7 +87,15 @@ next_iface:
         ifaddr = ifaddr->ifa_next;
     }
 
-	lassert(vector_shrink_to_fit(&ifaces));
+	freeifaddrs(ifaddr_head);
+
+	if (ifaces.size > 0) {
+		lassert(vector_shrink_to_fit(&ifaces));
+	}
+	else {
+		ALOGW("You have no broadcast interfaces, connect only by IP:Port\n");
+		goto stop_broadcast;
+	}
 
     BCSBEACON beacon = {
           .magic = htobe64(BCSBEACON_MAGIC)
@@ -109,7 +118,7 @@ next_iface:
 
     // Unreachable code
     // It would be neccessary in the case of abnormal server termination
-	// ReSharper disable once CppUnreachableCode
+stop_broadcast:
 	for(size_t i = 0; i < ifaces.size; i++) {
 		free(ifaces.array[i].ptr);
 	}

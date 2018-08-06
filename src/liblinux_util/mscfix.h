@@ -1,5 +1,6 @@
 // It's better without
 //#pragma once
+// Этот файл нужен для поддержки Visual Studio
 
 // ReSharper disable once CppMissingIncludeGuard
 #ifdef _MSC_VER
