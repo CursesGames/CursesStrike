@@ -13,6 +13,7 @@ bool isFree(BCSSERVER_FULL_STATE *state, uint16_t x, uint16_t y){
 
     for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
         if((state->client[i].public_info.state != BCSCLST_FREESLOT)
+            && (state->client[i].public_info.state != BCSCLST_RESPAWNING)
             && (state->client[i].public_info.position.y == y)
             && (state->client[i].public_info.position.x == x)){
             return false;

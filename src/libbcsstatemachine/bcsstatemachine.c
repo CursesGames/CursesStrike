@@ -148,7 +148,6 @@ bool bcsstatemachine_process_request(
                 bullet->direction = state->client[id].public_info.direction;
                 LIST_VALTYPE val = { .ptr = bullet };
                 linkedlist_push_back(&state->bullets, val);
-
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
