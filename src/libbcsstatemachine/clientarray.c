@@ -110,8 +110,7 @@ int delete_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client)
         return -1;
     }
     pthread_mutex_lock(&state->mutex_self);
-    state->client[num].public_info.state = BCSCLST_FREESLOT;
-    memset(&(state->client[num]), 0, sizeof(BCSCLIENT));
+    memset(&state->client[num], 0, sizeof(BCSCLIENT));
     pthread_mutex_unlock(&state->mutex_self);
 
     return 0;
