@@ -103,7 +103,7 @@ bool bcsstatemachine_process_request(
                         break;
                         
                     case BCSDIR_RIGHT:
-                        if((x != state->map.width)
+                        if((x != (state->map.width - 1))
                             && ((state->map.map_primitives[y * state->map.width + (x + 1)]) == PUNIT_OPEN_SPACE)
                             && (isFree(state, x + 1, y) == true)){
                             state->client[id].public_info.position.x++;
@@ -119,7 +119,7 @@ bool bcsstatemachine_process_request(
                         break;
 
                     case BCSDIR_DOWN:
-                        if((y != state->map.height)
+                        if((y != (state->map.height - 1))
                             && ((state->map.map_primitives[(y + 1)* state->map.width + x]) == PUNIT_OPEN_SPACE)
                             && (isFree(state, x, y + 1) == true)){
                             state->client[id].public_info.position.y++;
