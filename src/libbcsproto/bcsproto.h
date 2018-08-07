@@ -28,7 +28,7 @@
 // beacon packet signature
 #define BCSBEACON_MAGIC 0x1324214277da7aff
 // длина человекочитаемого имени сервера без '\0':
-#define BCSBEACON_DESCRLEN 47
+#define BCSBEACON_DESCRLEN 51
 
 // default server port, what's unclear?
 #define BCSSERVER_DEFAULT_PORT 2018

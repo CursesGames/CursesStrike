@@ -128,8 +128,16 @@ void *receiver_func(void *argv) {
 	char buf[BCSDGRAM_MAX];
 
 	while(true) {
-		ssize_t rcvd;
-		__syscall(rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (sockaddr*)&src, &sa_len));
+		bool need_redraw = true;
+		ssize_t rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (sockaddr*)&src, &sa_len);
+		if(rcvd == -1) {
+			if (rcvd == EAGAIN) {
+				// no announces from server
+				goto force_redraw;
+			}
+			else
+				__syscall(-1);
+		}
 		if(src.sin_addr.s_addr != server.addr || src.sin_port != server.port) {
 			ALOGD("Wrong datagram source: %s:%hu != %s:%hu\n"
 				, inet_ntoa(src.sin_addr), be16toh(src.sin_port)
@@ -138,7 +146,6 @@ void *receiver_func(void *argv) {
 			continue;
 		}
 
-		bool need_redraw = true;
 		// на время обработки принятого сообщения блокируем состояние
 		pthread_mutex_lock(&pfs->mutex_self);
 		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
@@ -184,6 +191,7 @@ void *receiver_func(void *argv) {
 		}
 		pthread_mutex_unlock(&pfs->mutex_self);
 
+force_redraw:
 		if(need_redraw) {
 			draw_window(pfs);
 		}
@@ -443,6 +451,8 @@ start_bcast_scan:
 		__syscall(epoll_ctl(epollfd, EPOLL_CTL_ADD, ubcls[i], &evt));
 	}
 
+	vector_free(&ifaces);
+
 	VECTOR servers;
 	lassert(vector_init(&servers, 10)); // TODO: get rid of magic number
 	uint32_t number = 0;
@@ -540,7 +550,8 @@ next_epevent:
 		idx = 1;
 		printf("Enter 0 to rescan, or the number of server to connect [1]: ");
 		fflush(stdout);
-		fgets(buf, 256, stdin); // TODO: buffer overflow, check?
+		if(fgets(buf, 256, stdin) == NULL)
+			goto connect_leave;
 		if(buf[0] == '\n')
 			break;
 		if(sscanf(buf, "%u", &idx) == 1 && idx <= servers.size)
@@ -550,7 +561,6 @@ next_epevent:
 
 	if(idx == 0) {
 		vector_free(&servers);
-		vector_free(&ifaces);
 		goto start_bcast_scan; // FIXME
 	}
 	
@@ -804,6 +814,7 @@ loop_leave:
 	endwin();
 
 connect_leave:
+	vector_free(&servers);
 
 	return 0;
 }

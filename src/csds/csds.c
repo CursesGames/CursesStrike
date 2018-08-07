@@ -39,7 +39,8 @@
 #define THREAD_UDP_MAIN 0
 #define THREAD_UDP_BCAST 1
 #define THREAD_TCP_MAP 2
-#define THREAD_UDP_ANNOUNCE 3
+//#define THREAD_UDP_ANNOUNCE 3
+#define THREAD_SPEC_COUNT 3
 
 // WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
@@ -54,8 +55,7 @@ struct bc_data {
 void *send_broadcast(void *argv) {
     struct ifaddrs *ifaddr;
     const int bc_enable = 1;
-	VECTOR ifaces;
-	lassert(vector_init(&ifaces, BC_FD_NUM));
+	VECTOR *ifaces = (VECTOR*)argv;
 
     __syscall(getifaddrs(&ifaddr));
 	struct ifaddrs *ifaddr_head = ifaddr;
@@ -80,11 +80,12 @@ void *send_broadcast(void *argv) {
 			, .sin_port = htobe16(BCSSERVER_BCAST_PORT)
 			, .sin_family = AF_INET
 		};
+		memset(&sin.sin_zero, 0, sizeof(sin.sin_zero));
 		iface->broadcast_fd = sock;
 		iface->bc_addr = sin;
 
 		VECTOR_VALTYPE val = { .ptr = iface };
-		lassert(vector_push_back(&ifaces, val));
+		lassert(vector_push_back(ifaces, val));
 
         ALOGD("Beacons will be sent to %s:%hu\n", inet_ntoa(sin.sin_addr), be16toh(sin.sin_port));
 
@@ -94,8 +95,8 @@ next_iface:
 
 	freeifaddrs(ifaddr_head);
 
-	if (ifaces.size > 0) {
-		lassert(vector_shrink_to_fit(&ifaces));
+	if (ifaces->size > 0) {
+		lassert(vector_shrink_to_fit(ifaces));
 	}
 	else {
 		ALOGW("You have no broadcast interfaces, connect only by IP:Port\n");
@@ -108,13 +109,16 @@ next_iface:
 		, .proto_ver = htobe16(BCSPROTO_VERSION)
         , .description = "Curses-Strike Server v0.2 by Sl1vo4ka"
     };
+	// for valgrind: initialize bytes after descr str
+	//memset(beacon.description, 0, BCSBEACON_DESCRLEN + 1);
+	//strcpy(beacon.description, "Curses-Strike Server v0.2 by Sl1vo4ka");
 
-	size_t n = ifaces.size;
-	VECTOR_VALTYPE *array = vector_array_ptr(&ifaces);
+	size_t n = ifaces->size;
+	VECTOR_VALTYPE *array = vector_array_ptr(ifaces);
     while(true) {
         for(size_t i = 0; i < n; i++) {
 			struct bc_data *iface = array[i].ptr;
-            __syscall(sendto2(iface->broadcast_fd, &beacon, sizeof(BCSBEACON), 0, 
+            __syscall(sendto(iface->broadcast_fd, &beacon, sizeof(BCSBEACON), 0, 
 				(sockaddr*)&(iface->bc_addr), sizeof(sockaddr_in)));
         }
 		// no spam, only one beacon per second
@@ -124,10 +128,10 @@ next_iface:
     // Unreachable code
     // It would be neccessary in the case of abnormal server termination
 stop_broadcast:
-	for(size_t i = 0; i < ifaces.size; i++) {
+	/*for(size_t i = 0; i < ifaces.size; i++) {
 		free(ifaces.array[i].ptr);
-	}
-	vector_free(&ifaces);
+	}*/
+	//vector_free(&ifaces);
     return NULL;
 }
 
@@ -221,6 +225,7 @@ void send_announces(sigval_t argv) {
             }
         }
     }
+	pthread_cancel(pthread_self());
 }
 
 void *serve_map(void *argv) {
@@ -308,8 +313,9 @@ void *state_machine(void *argv) {
 // пишем в консоль команды, цикл в конце мейна их обрабатывает. норм? норм.
 
 int main(int argc, char **argv) {
-    pthread_attr_t attr; //thread attribute
-    pthread_t threads[3];
+    pthread_t threads[THREAD_SPEC_COUNT];
+	pthread_attr_t attr[THREAD_SPEC_COUNT]; //thread attribute
+	pthread_attr_t attr_timer;
 
 	// до того, как мы не начали создавать потоки
 	// за доступ к state можно не опасаться
@@ -391,19 +397,26 @@ int main(int argc, char **argv) {
     // Thread attribute `joinable' tells, if the system will wait for its termination
     // Kramarenko said that some systems do not have this attribute by default
 	// What if he lied?
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
-
-	// create thread for broadcast
-    lassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr, send_broadcast, NULL) == 0);
 
 	// Str1ker, 06.08.2018
 	// create thread for current map serving
-	lassert(pthread_create(&threads[THREAD_TCP_MAP], &attr, serve_map, &state) == 0);
+    pthread_attr_init(&attr[THREAD_TCP_MAP]);
+	pthread_attr_setdetachstate(&attr[THREAD_TCP_MAP], PTHREAD_CREATE_JOINABLE);
+	lassert(pthread_create(&threads[THREAD_TCP_MAP], &attr[THREAD_TCP_MAP], serve_map, &state) == 0);
+
 	// create thread for our great state machine!
-	lassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr, state_machine, &state) == 0);
+	pthread_attr_init(&attr[THREAD_UDP_MAIN]);
+	pthread_attr_setdetachstate(&attr[THREAD_UDP_MAIN], PTHREAD_CREATE_JOINABLE);
+	lassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr[THREAD_UDP_MAIN], state_machine, &state) == 0);
+
+	// create thread for broadcast
+    pthread_attr_init(&attr[THREAD_UDP_BCAST]);
+	pthread_attr_setdetachstate(&attr[THREAD_UDP_BCAST], PTHREAD_CREATE_JOINABLE);
+    lassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr[THREAD_UDP_BCAST], send_broadcast, &state.sock_b) == 0);
 
 	// create thread for announces
+    pthread_attr_init(&attr_timer);
+	pthread_attr_setdetachstate(&attr_timer, PTHREAD_CREATE_DETACHED);
 	// Str1ker, 06.08.2018: replace thread to system monotonic clock timer
     //lassert(pthread_create(&threads[THREAD_UDP_ANNOUNCE], &attr, send_announces, &state) == 0);
 	struct sigevent sgv = {
@@ -411,7 +424,7 @@ int main(int argc, char **argv) {
 		, .sigev_value = { .sival_ptr = &state }
 		, .sigev_signo = SIGALRM
 		, .sigev_notify_function = send_announces
-        , .sigev_notify_attributes = 0
+        , .sigev_notify_attributes = &attr_timer
 	};
 	timer_t timer_id;
 	int timer_fd;
@@ -448,5 +461,25 @@ int main(int argc, char **argv) {
 	printf("[$] You pressed Ctrl+D, exiting gracefully\n");
 
 	// TODO: graceful shutdown
+	__syscall(timer_delete(timer_id));
+		for(int i = 0; i < THREAD_SPEC_COUNT; ++i) {
+		//lassert(pthread_kill(threads[i], SIGTERM) == 0);
+		lassert(pthread_cancel(threads[i]) == 0);
+		lassert(pthread_join(threads[i], NULL) == 0);
+		lassert(pthread_attr_destroy(&attr[i]) == 0);
+	}
+	for(size_t i = 0; i < state.sock_b.size; ++i) {
+		close(((struct bc_data*)(state.sock_b.array[i].ptr))->broadcast_fd);
+		free(state.sock_b.array[i].ptr);
+	}
+	close(state.sock_u);
+	close(state.sock_t);
+	for(size_t i = 0; i < state.sock_b.size; ++i) {
+		free(state.sock_b.array[i].ptr);
+	}
+	vector_free(&state.sock_b);
+	free(state.map.map_primitives);
+	linkedlist_clear(&state.bullets);
+
     return EXIT_SUCCESS;
 }
