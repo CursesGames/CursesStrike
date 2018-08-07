@@ -109,7 +109,7 @@ next_iface:
           .magic = htobe64(BCSBEACON_MAGIC)
         , .port = htobe16(BCSSERVER_DEFAULT_PORT)
 		, .proto_ver = htobe16(BCSPROTO_VERSION)
-        , .description = "Curses-Strike Server v0.2 by Sl1vo4ka"
+        , .description = "Curses-Strike Server v0.3 by Sl1vo4ka"
     };
 	// for valgrind: initialize bytes after descr str
 	//memset(beacon.description, 0, BCSBEACON_DESCRLEN + 1);
@@ -195,6 +195,7 @@ void send_announces(sigval_t argv) {
 		array_bullet[n].y = htobe16(array_bullet[n].y);
 		++n;
 	}
+	// респануть игроков
 	pthread_mutex_unlock(&state->mutex_self);
 
 	repl->type = htobe32(BCSREPLT_ANNOUNCE);
@@ -322,15 +323,110 @@ void *state_machine(void *argv) {
 			continue;
 
         if (bcsstatemachine_process_request(state, &addr_client, (BCSMSG*)cl_msg, rcvd)) {
-	        ALOGV("request accepted\n");
+	        //ALOGV("request accepted\n");
         }
         else {
-	        ALOGV("request denied\n");
+	        //ALOGV("request denied\n");
         }
 	}
 
 	// ReSharper disable once CppUnreachableCode
 	return NULL;
+}
+
+void dump_state(BCSSERVER_FULL_STATE *state) {
+	const char dirchar[] = { '<', '^', '>', 'v' };
+	FILE *f = fopen("dump_server.log", "w");
+	pthread_mutex_lock(&state->mutex_self);
+	fprintf(f, "Client slots:\n");
+	for(int i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
+		BCSCLIENT *cl = &state->client[i];
+		fprintf(f, "Slot #%d: ", i);
+		switch(cl->public_info.state) {
+			case BCSCLST_FREESLOT: fprintf(f, "FREESLOT"); break;
+			case BCSCLST_CONNECTING: fprintf(f, "CONNECTING"); break;
+			case BCSCLST_CONNECTED: fprintf(f, "CONNECTED"); break;
+			case BCSCLST_PLAYING: fprintf(f, "PLAYING"); break;
+			case BCSCLST_RESPAWNING: fprintf(f, "RESPAWNING"); break;
+		}
+		fprintf(f, "(%u), (%hu, %hu), %c (%u)\n", cl->public_info.state
+			, cl->public_info.position.x, cl->public_info.position.y
+			, dirchar[cl->public_info.direction], cl->public_info.direction);
+
+		fprintf(f, "\tNickname = '%s', %hu:%hu\n", cl->public_ext_info.nickname
+			, cl->public_ext_info.frags, cl->public_ext_info.deaths);
+		fprintf(f, "\t%s:%hu, seq = %u, (timers hidden)\n"
+			, inet_ntoa(cl->private_info.endpoint.sin_addr)
+			, cl->private_info.endpoint.sin_port, cl->private_info.last_packet_no);
+	}
+	fprintf(f, "Bullet objects: %lu\n", state->bullets.count);
+	LIST_VALTYPE *lv;
+	LINKED_LIST_ENTRY *lle = NULL;
+	while((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
+		BCSBULLET *bullet = (BCSBULLET*)(lv->ptr);
+		fprintf(f, "\tCreator: %hu, '%c', (%hu, %hu)\n"
+			, bullet->creator_id, dirchar[bullet->direction], bullet->x, bullet->y);
+	}
+	BCSMAP map = state->map;
+	uint8_t *map_xray = alloca(map.width * map.height);
+	fprintf(f, "Map X-Ray: (%hux%hu)\n", map.width, map.height);
+
+	// static
+	for(uint16_t y = 0; y < map.height; ++y) {
+		for(uint16_t x = 0; x < map.width; ++x) {
+			char c;
+			switch((BCSMAPPRIMITIVE)(map.map_primitives[y * map.width + x])) {
+				case PUNIT_ROCK: c = '#'; break;
+				case PUNIT_WATER: c = '~'; break;
+				case PUNIT_BOX: c = 'X'; break;
+				default: c = ' ';
+			}
+			map_xray[y * map.width + x] = c;
+		}
+	}
+	// dynamic: players
+	for(uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
+		if(state->client[i].public_info.state == BCSCLST_PLAYING) {
+			char c;
+			uint32_t offset = state->client[i].public_info.position.y * map.width 
+				+ state->client[i].public_info.position.x;
+			if (i < 10) c = '0' + i;
+			else c = 'A' + (i - 10);
+			if (map_xray[offset] == ' ') {
+				map_xray[offset] = c;
+			}
+			else {
+				ALOGW("OVERLAY(1) DETECTED AT (%hu, %hu)!!!\n"
+					, state->client[i].public_info.position.x, state->client[i].public_info.position.y);
+			}
+		}
+	}
+	// dynamic: bullets
+	lle = NULL;
+	while((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
+		BCSBULLET bullet = *(BCSBULLET*)(lv->ptr);
+		char c = map_xray[bullet.y * map.width + bullet.x];
+		char d = ' ';
+		switch(bullet.direction) {
+			case BCSDIR_LEFT: case BCSDIR_RIGHT: d = '-'; break;
+			case BCSDIR_UP: case BCSDIR_DOWN: d = '|'; break;
+		}
+		if (c == ' ') 
+			map_xray[bullet.y * map.width + bullet.x] = d;
+		else if((c == '-' && d == '|') || (c == '|' && d == '-'))
+			map_xray[bullet.y * map.width + bullet.x] = '+';
+		else
+			ALOGW("OVERLAY(2) DETECTED AT (%hu, %hu)!!!\n", bullet.x, bullet.y);
+	}
+
+	for(uint16_t y = 0; y < map.height; ++y) {
+		for(uint16_t x = 0; x < map.width; ++x) {
+			fputc(map_xray[y * map.width + x], f);
+		}
+		fprintf(f, "\n");
+	}
+	fclose(f);
+	pthread_mutex_unlock(&state->mutex_self);
 }
 
 // stdin stays in the main thread, for user input
@@ -489,8 +585,12 @@ int main(int argc, char **argv) {
 		if (strcmp(buf, "help") == 0) {
 			printf("[$] Someday there will be a help. Now it's empty...\n");
 		}
-		else if(strcmp(buf, "info") == 0) {
+		else if (strcmp(buf, "info") == 0) {
 			log_print_cl_info(&state);
+		}
+		else if(strcmp(buf, "dump") == 0) {
+			dump_state(&state);
+			printf("[$] Dump is in 'dump_server.log' for you.\n");
 		}
 		else {
 			printf("[$] Unknown command '%.40s'\n", buf);

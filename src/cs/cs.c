@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -152,7 +153,10 @@ void *receiver_func(void *argv) {
 		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
 		switch(be32toh(repl->type)) {
 			case BCSREPLT_ANNOUNCE:
-				ALOGI("Received announce\n");
+				// this is to trick the compiler that's not a declaration (:
+				// ReSharper disable once CppAssignedValueIsNeverUsed
+				// ReSharper disable once CppIdenticalOperandsInBinaryExpression
+				rcvd = rcvd;
 				BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
 				BCSCLIENT_PUBLIC *players = (BCSCLIENT_PUBLIC*)(ann + 1);
 			
@@ -249,7 +253,8 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
 				case PUNIT_OPEN_SPACE:
 					nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
 					// winch puts char under cursor, while waddch adjusts cursor
-					nassert(mvwinsch(pad, i, j, ' '));
+					// we want to leave this cell transparent
+					//nassert(mvwinsch(pad, i, j, ' '));
 					nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
 					//c = ' ';
 				break; // empty cell
@@ -330,13 +335,16 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	WINDOW *below = pfs->below;
 	pthread_mutex_unlock(&pfs->mutex_self);
 
+	// copy a part of pad
+	// первые два параметра - верхний левый угол pad, с которого берём
+	// следующие четыре - куда на экран проецируем
 	nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// draw players
 	if(self.state == BCSCLST_PLAYING) {
 		nassert(wmove(stdscr, self.position.y, self.position.x));
 		wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-		winsch(stdscr, dirchar[self.direction]);
+		waddch(stdscr, dirchar[self.direction]);
 		wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	}
 
@@ -345,9 +353,8 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	for(uint16_t i = 0; i < pfs->others.count; i++) {
 		if(i != pfs->others.index_self && pfs->others.array[i].state == BCSCLST_PLAYING) {
 			BCSCLIENT_PUBLIC enemy = pfs->others.array[i];
-			wmove(stdscr, enemy.position.y, enemy.position.x);
 			wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
-			winsch(stdscr, dirchar[enemy.direction]);
+			mvwaddch(stdscr, enemy.position.y, enemy.position.x, dirchar[enemy.direction]);
 			wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
 		}
 	}
@@ -365,7 +372,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 				c = '|';
 			break;
 		}
-		mvwinsch(stdscr, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
+		mvwaddch(stdscr, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
 	}
 	
 	pthread_mutex_unlock(&pfs->mutex_self);
@@ -374,7 +381,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// copy a part of pad
 	// первые два параметра - верхний левый угол pad, с которого берём
 	// следующие четыре - куда на экран проецируем
-    nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+    //nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// эта панелька наложится поверх карты
 	nassert(werase(below));
@@ -445,8 +452,8 @@ int main(int argc, char **argv) {
 		, .below = NULL
 		, .frames = 0
 		, .endpoint = {
-			  .sin_addr = INADDR_ANY
-			, .sin_port = 0
+			  .sin_addr = INADDR_ANY // addr is in host byte order
+			, .sin_port = htobe16(BCSSERVER_DEFAULT_PORT) // while port is always in BE
 			, .sin_family = AF_INET
 		  }
 		, .sockfd = -1 // erroneous socket
@@ -454,6 +461,37 @@ int main(int argc, char **argv) {
 
 	char buf[BCSDGRAM_MAX];
 	char addrstr[INET_ADDRSTRLEN];
+
+	if(argc > 1) {
+		// try to get endpoint from argv[1]
+		// taken from: SibSutis\labs_ptid_self\rgz_ptid_self\program.cpp
+		char *ptr = argv[1];
+		while (*ptr != ':' && *ptr != '\0') ++ptr;
+		if (*ptr == ':') {
+			if (sscanf(ptr + 1, "%hu", &pfs.endpoint.sin_port) < 1) {
+				ALOGE("Incorrect port number\n");
+				return EXIT_FAILURE;
+			}
+			pfs.endpoint.sin_port = htobe16(pfs.endpoint.sin_port);
+			*ptr = '\0'; // WARNING: now we patch argv
+		}
+
+		if (!inet_pton(AF_INET, argv[1], &pfs.endpoint.sin_addr)) {
+			// Resolve hostname
+			struct hostent *sv_host = gethostbyname(argv[1]);
+			if (!sv_host) {
+				ALOGE("Could not resolve hostname\n");
+				return EXIT_FAILURE;
+			}
+
+			size_t ip_count;
+			// ReSharper disable once CppPossiblyErroneousEmptyStatements
+			for (ip_count = 0; sv_host->h_addr_list[ip_count] != NULL; ++ip_count);
+			// DONE: select random IP if count > 1, up to RAND_MAX, e.g. 32767
+			pfs.endpoint.sin_addr = *(struct in_addr*)(sv_host->h_addr_list[rand() % ip_count]);
+		}
+		goto connect_to;
+	}
 	// узнать все пригодные интерфейсы
 	VECTOR ifaces;
 
@@ -605,8 +643,9 @@ next_epevent:
 	pfs.endpoint.sin_addr.s_addr = srv->endpoint.addr;
 	pfs.endpoint.sin_port = srv->endpoint.port;
 
+connect_to:
 	lassert(inet_ntop(AF_INET, &(srv->endpoint.addr), addrstr, INET_ADDRSTRLEN) != NULL);
-	ALOGI("Connecting to %s:%hu\n", addrstr, ntohs(srv->endpoint.port));
+	ALOGI("Connecting to %s:%hu\n", addrstr, be16toh(srv->endpoint.port));
 
 	VERBOSE ALOGV("Creating UDP socket... ");
 	__syscall(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));

@@ -23,7 +23,7 @@
 //   be16toh(), be32toh(), be64toh()             //
 ///////////////////////////////////////////////////
 
-#define BCSPROTO_VERSION 0x0002
+#define BCSPROTO_VERSION 0x0003
 
 // beacon packet signature
 #define BCSBEACON_MAGIC 0x1324214277da7aff
