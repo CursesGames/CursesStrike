@@ -51,8 +51,7 @@ bool bcsstatemachine_process_request(
                         reply.type = htobe32(BCSREPLT_MAP);
                         log_print_cl_info(state);
                 }
-                __syscall(gettimeofday(&reply.time_gen, NULL));
-                htobe16(&reply.time_gen);
+                //__syscall(gettimeofday(&reply.time_gen, NULL));
                 __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                           0, (sockaddr*)src, sizeof(sockaddr_in)));
             }
@@ -70,8 +69,7 @@ bool bcsstatemachine_process_request(
                 reply.type = htobe32(BCSREPLT_NACK);
             }
             pthread_mutex_unlock(&state->mutex_self);
-            __syscall(gettimeofday(&reply.time_gen, NULL));
-            htobe16(&reply.time_gen);
+            //__syscall(gettimeofday(&reply.time_gen, NULL));
             __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                              0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
@@ -81,8 +79,7 @@ bool bcsstatemachine_process_request(
             delete_client(state, src);
             pthread_mutex_unlock(&state->mutex_self);
             reply.type = htobe32(BCSREPLT_ACK);
-            __syscall(gettimeofday(&reply.time_gen, NULL));
-            htobe16(&reply.time_gen);
+            //__syscall(gettimeofday(&reply.time_gen, NULL));
             __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                              0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
@@ -168,8 +165,7 @@ bool bcsstatemachine_process_request(
             );
 
             stats_to_send->type = htobe32(BCSREPLT_STATS);
-            __syscall(gettimeofday(&(stats_to_send->time_gen), NULL));
-            htobe16(&(stats_to_send->time_gen));
+            //__syscall(gettimeofday(&(stats_to_send->time_gen), NULL));
 
             BCSCLIENT_PUBLIC_EXT *array = (BCSCLIENT_PUBLIC_EXT*)(stats_to_send + 1);
                for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
