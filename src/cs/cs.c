@@ -131,7 +131,7 @@ void *receiver_func(void *argv) {
 		bool need_redraw = true;
 		ssize_t rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (sockaddr*)&src, &sa_len);
 		if(rcvd == -1) {
-			if (rcvd == EAGAIN) {
+			if (errno == EAGAIN) {
 				// no announces from server
 				goto force_redraw;
 			}
