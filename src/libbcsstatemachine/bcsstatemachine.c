@@ -95,37 +95,33 @@ bool bcsstatemachine_process_request(
                 uint16_t y = state->client[id].public_info.position.y;
                 switch(be32toh(msg->un.ints.int_lo)) {
                     case BCSDIR_LEFT:
-                        x--;
-                        if((x >= 0)
-                            && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x, y) == true)){
+                        if((x != 0)
+                            && ((state->map.map_primitives[y * state->map.width + (x - 1)]) == PUNIT_OPEN_SPACE)
+                            && (isFree(state, x - 1, y) == true)){
                             state->client[id].public_info.position.x--;
                         }
                         break;
                         
                     case BCSDIR_RIGHT:
-                        x++;
-                        if((x < state->map.width)
-                            && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x, y) == true)){
+                        if((x != state->map.width)
+                            && ((state->map.map_primitives[y * state->map.width + (x + 1)]) == PUNIT_OPEN_SPACE)
+                            && (isFree(state, x + 1, y) == true)){
                             state->client[id].public_info.position.x++;
                         }
                         break;
 
                     case BCSDIR_UP:
-                        y--;
-                        if((y >= 0)
-                            && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x, y) == true)){
+                        if((y != 0)
+                            && ((state->map.map_primitives[(y - 1) * state->map.width + x]) == PUNIT_OPEN_SPACE)
+                            && (isFree(state, x, y - 1) == true)){
                             state->client[id].public_info.position.y--;
                         }
                         break;
 
                     case BCSDIR_DOWN:
-                        y++;
-                        if((y < state->map.height)
-                            && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x, y) == true)){
+                        if((y != state->map.height)
+                            && ((state->map.map_primitives[(y + 1)* state->map.width + x]) == PUNIT_OPEN_SPACE)
+                            && (isFree(state, x, y + 1) == true)){
                             state->client[id].public_info.position.y++;
                         }
                         break;
