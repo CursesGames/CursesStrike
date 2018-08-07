@@ -4,11 +4,13 @@
 #include "../liblinux_util/mscfix.h"
 
 #include <stdbool.h>
+#include <pthread.h>
 #include <ncursesw/ncurses.h> // just to export window type, nothing personal
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsmap/bcsmap.h"
 #include "../libvector/vector.h"
 #include "../liblinkedlist/linkedlist.h"
+//#include "../libbcsgameplay/bcsgameplay.h"
 
 // тупой C требует указания типа объекта, с**а
 typedef struct sockaddr_in sockaddr_in;
@@ -33,6 +35,10 @@ typedef struct {
 	BCSMAP map_overlay;
 	WINDOW *mappad;
 	WINDOW *below;
+	struct {
+		uint16_t count;
+		BCSBULLET *array;
+	} bullets;
 	size_t frames;
 } BCSPLAYER_FULL_STATE;
 

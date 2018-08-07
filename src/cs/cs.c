@@ -26,6 +26,7 @@
 #include "../libbcsproto/bcsproto.h"
 #include "../libvector/vector.h"
 #include "../libbcsstatemachine/bcsstatemachine.h"
+#include "../libbcsgameplay/bcsgameplay.h"
 
 // catching broadcast messages timeout
 #define BCAST_SCAN_TIMEOUT_SEC 4
@@ -58,11 +59,11 @@ typedef enum {
 // look at bcsproto.h:
 //typedef enum __bcsdir {
 //	  BCSDIR_LEFT
-//	, BCSDIR_RIGHT
 //	, BCSDIR_UP
+//	, BCSDIR_RIGHT
 //	, BCSDIR_DOWN
 //} BCSDIRECTION;
-const char dirchar[] = { '<', '>', '^', 'v' };
+const char dirchar[] = { '<', '^', '>', 'v' };
 
 typedef BCSBEACON BCAST_SRV;
 
@@ -154,13 +155,33 @@ void *receiver_func(void *argv) {
 				ALOGI("Received announce\n");
 				BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
 				BCSCLIENT_PUBLIC *players = (BCSCLIENT_PUBLIC*)(ann + 1);
-				pthread_mutex_lock(&pfs->mutex_self);
+				BCSBULLET *array_bullet = (BCSBULLET*)(players + ann->count);
+				//pthread_mutex_lock(&pfs->mutex_self);
 				// copy self state
-				pfs->self = players[ann->index_self];
-				pfs->others.index_self = ann->index_self;
-				pfs->others.count = ann->count;
-				memcpy(&pfs->others.array, players, sizeof(BCSCLIENT_PUBLIC) * ann->count);
-				pthread_mutex_unlock(&pfs->mutex_self);
+				//pfs->self = players[be16toh(ann->index_self)];
+				pfs->others.index_self = be16toh(ann->index_self);
+				pfs->others.count = be16toh(ann->count);
+				memcpy(&pfs->others.array, players, sizeof(BCSCLIENT_PUBLIC) * pfs->others.count);
+				// convert to host from BE
+				for(size_t i = 0; i < pfs->others.count; ++i) {
+					pfs->others.array[i].direction = be32toh(pfs->others.array[i].direction);
+					pfs->others.array[i].state = be32toh(pfs->others.array[i].state);
+					pfs->others.array[i].position.x = be16toh(pfs->others.array[i].position.x);
+					pfs->others.array[i].position.y = be16toh(pfs->others.array[i].position.y);
+				}
+				//pfs->self = players[be16toh(ann->index_self)];
+				pfs->self = pfs->others.array[pfs->others.index_self];
+				// copy bullets
+				pfs->bullets.count = be16toh(ann->count_bullets);
+				memcpy(&pfs->bullets.array, array_bullet, sizeof(BCSBULLET) * pfs->bullets.count);
+				// convert to host from BE
+				for(size_t i = 0; i < pfs->bullets.count; ++i) {
+					pfs->bullets.array[i].creator_id = be16toh(pfs->bullets.array[i].creator_id);
+					pfs->bullets.array[i].direction = be32toh(pfs->bullets.array[i].direction);
+					pfs->bullets.array[i].x = be16toh(pfs->bullets.array[i].x);
+					pfs->bullets.array[i].y = be16toh(pfs->bullets.array[i].y);
+				}
+				//pthread_mutex_unlock(&pfs->mutex_self);
 			break;
 
 			case BCSREPLT_EMERGENCY:
@@ -310,10 +331,12 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
     nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// draw players
-	nassert(wmove(stdscr, self.position.y, self.position.x));
-	wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-	winsch(stdscr, dirchar[self.direction]);
-	wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+	if(self.state == BCSCLST_PLAYING) {
+		nassert(wmove(stdscr, self.position.y, self.position.x));
+		wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+		winsch(stdscr, dirchar[self.direction]);
+		wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+	}
 
 	// lock for all enemies, I don't think this is slow
 	pthread_mutex_lock(&pfs->mutex_self);
@@ -326,6 +349,23 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 			wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
 		}
 	}
+
+	for(uint16_t i = 0; i < pfs->bullets.count; ++i) {
+		char c = ' ';
+		switch(pfs->bullets.array[i].direction) {
+			case BCSDIR_LEFT:
+			case BCSDIR_RIGHT:
+				c = '-';
+			break;
+
+			case BCSDIR_UP:
+			case BCSDIR_DOWN:
+				c = '|';
+			break;
+		}
+		mvwinsch(stdscr, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
+	}
+	
 	pthread_mutex_unlock(&pfs->mutex_self);
 	nassert(wnoutrefresh(stdscr));
 
@@ -338,21 +378,6 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	nassert(doupdate());
 	// порисовали и хватит
 	pthread_mutex_unlock(&pfs->mutex_frame);
-}
-
-void timer_detonate(sigval_t argv) {
-	return;
-	/*
-	BCSPLAYER_FULL_STATE *prm = (BCSPLAYER_FULL_STATE*)(argv.sival_ptr);
-	pthread_mutex_lock(&prm->mutex_self);
-	++(prm->frames);
-	stdscr->_clear = true;
-	prm->below->_clear = true;
-	pthread_mutex_unlock(&prm->mutex_self);
-
-	draw_window(prm);
-	*/
-	//return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -700,9 +725,9 @@ next_epevent:
 		}
 
 		if(be32toh(repl->type) != BCSREPLT_ACK) {
-			ALOGD("Reply type mismatch (expecting %u, got %u), skipping\n"
-				, BCSREPLT_MAP, be32toh(repl->type));
-			continue;
+			ALOGE("Reply type mismatch (expecting %u, got %u), skipping\n"
+				, BCSREPLT_ACK, be32toh(repl->type));
+			goto connect_leave;
 		}
 
 		// if we are there: source matches, packet no and reply type too

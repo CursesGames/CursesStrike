@@ -110,8 +110,8 @@ typedef enum __bcsdir {
 // except for L, R, U, D?
 // Solution: use `BCSDIR_LEFT' where direction does not matter.
 	  BCSDIR_LEFT, BCSDIR_UNDEF = BCSDIR_LEFT
-	, BCSDIR_RIGHT
 	, BCSDIR_UP
+	, BCSDIR_RIGHT
 	, BCSDIR_DOWN
 } BCSDIRECTION;
 
@@ -243,6 +243,8 @@ typedef struct __bcsmsg_announce {
 // номер записи, соответствующей самому игроку
 // спасибо за идею NRshka
 	uint16_t index_self;
+// количество пуль в анонсе
+	uint16_t count_bullets;
 // all public information
 // the very first element [0] is always the client that received the message
 // вся публичная информация о клиентах
@@ -264,6 +266,13 @@ typedef struct __bcs_beacon {
 // строка с человекочитаемым названием сервера
 	char description[BCSBEACON_DESCRLEN + 1];
 } BCSBEACON;
+
+typedef struct __bcs_bullet {
+    uint16_t creator_id;
+    int16_t x;
+    int16_t y;
+    BCSDIRECTION direction;
+} BCSBULLET;
 
 // unified interface. good to think about it.
 extern bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg);

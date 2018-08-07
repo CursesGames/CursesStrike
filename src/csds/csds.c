@@ -27,6 +27,8 @@
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsstatemachine/bcsstatemachine.h"
 #include "../liblinkedlist/linkedlist.h"
+#include "../libbcsgameplay/bcsgameplay.h"
+#include "../libbcsstatemachine/clientarray.h"
 
 // listen backlog size of TCP socket
 #define LISTEN_NUM 16
@@ -140,23 +142,12 @@ void send_announces(sigval_t argv) {
 	// извлекаем полное состояние
 	BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)(argv.sival_ptr);
 
-	// https://www.viva64.com/ru/w/v505/
-	// Do not call the alloca() function inside loops
-    BCSMSGREPLY *repl = alloca(
-		      sizeof(BCSMSGREPLY) 
-		    + sizeof(BCSMSGANNOUNCE) 
-		    + sizeof(BCSCLIENT_PUBLIC) * BCSSERVER_MAXCLIENTS
-	);
-    BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
-    BCSCLIENT_PUBLIC *array = (BCSCLIENT_PUBLIC*)(ann + 1);
-
-	repl->type = BCSREPLT_ANNOUNCE;
-
 	// берём снимок состояния и работаем над ним
 	// 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
 	// за это время другой поток может сделать с состоянием что-нибудь важное
 	pthread_mutex_lock(&state->mutex_self);
 	int u_fd = state->sock_u;
+	uint16_t player_count = state->player_count;
 	if(state->bullets.count > 0) {
 		// обработать пули
 		LINKED_LIST_ENTRY *lle;
@@ -165,23 +156,51 @@ void send_announces(sigval_t argv) {
 			// tornem, commit faster, oh pleeease
 			// bullet_ptr->ptr is a pointer to BULLET structure
 			// there will be something like:
-			// if(!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
-			//     bullet_ptr = linkedlist_throw(&state->bullets, &lle);
-			// }
-			// else {
-			//     bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
-			// }
+			if(!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
+			    bullet_ptr = linkedlist_throw(&state->bullets, &lle);
+			}
+			else {
+			    bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
+			}
 		}
 	}
-    uint16_t player_count = state->player_count;
+	// после обработки пуль количество могло измениться
+	uint16_t bullet_count = state->bullets.count;
 	BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
 	++(state->frames);
 	memcpy(state_snap, state->client, sizeof(state->client));
+
+	// https://www.viva64.com/ru/w/v505/
+	// Do not call the alloca() function inside loops
+    BCSMSGREPLY *repl = alloca(
+		      sizeof(BCSMSGREPLY) 
+		    + sizeof(BCSMSGANNOUNCE) 
+		    + sizeof(BCSCLIENT_PUBLIC) * player_count
+			+ sizeof(BCSBULLET) * bullet_count
+	);
+    BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
+    BCSCLIENT_PUBLIC *array = (BCSCLIENT_PUBLIC*)(ann + 1);
+	BCSBULLET *array_bullet = (BCSBULLET*)(array + player_count);
+
+	LIST_VALTYPE *lv;
+	LINKED_LIST_ENTRY *lle;
+	int n = 0;
+	while((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
+		array_bullet[n] = *((BCSBULLET*)lv->ptr);
+		// convert to BE
+		array_bullet[n].creator_id = htobe16(array_bullet[n].creator_id);
+		array_bullet[n].direction = htobe32(array_bullet[n].direction);
+		array_bullet[n].x = htobe16(array_bullet[n].x);
+		array_bullet[n].y = htobe16(array_bullet[n].y);
+		++n;
+	}
 	pthread_mutex_unlock(&state->mutex_self);
+
+	repl->type = htobe32(BCSREPLT_ANNOUNCE);
 
 	if(player_count > 0) {
 		BCSCLIENT_PUBLIC *arr_ptr = array;
-		int n = 0;
+		n = 0;
 		// lookup all slots
 		// include only registered (non-empty slots)
 		// send to actively interacting
@@ -193,6 +212,11 @@ void send_announces(sigval_t argv) {
 
 			// copy struct
 			*arr_ptr = cl_ptr->public_info;
+			// convert to BE
+			arr_ptr->direction = htobe32(arr_ptr->direction);
+			arr_ptr->position.x = htobe16(arr_ptr->position.x);
+			arr_ptr->position.y = htobe16(arr_ptr->position.y);
+			arr_ptr->state = htobe32(arr_ptr->state);
 
 			++arr_ptr;
 			++n;
@@ -200,10 +224,12 @@ void send_announces(sigval_t argv) {
 		// должно сойтись
 		lassert(n == player_count);
 
-		ann->count = player_count;
+		ann->count = htobe16(player_count);
+		ann->count_bullets = htobe16(bullet_count);
 		size_t annlen =	  sizeof(BCSMSGREPLY)
 						+ sizeof(BCSMSGANNOUNCE) 
-						+ sizeof(BCSCLIENT_PUBLIC) * player_count;
+						+ sizeof(BCSCLIENT_PUBLIC) * player_count
+						+ sizeof(BCSBULLET) * bullet_count;
 		// для прикола проштампуем пакет
 		bcsproto_new_packet((BCSMSG*)repl);
 		n = 0;
@@ -218,10 +244,11 @@ void send_announces(sigval_t argv) {
 				|| cl_ptr->public_info.state == BCSCLST_PLAYING
 				|| cl_ptr->public_info.state == BCSCLST_RESPAWNING
             ) { // if clients[i] is not NULL
-                ann->index_self = n;
+                ann->index_self = htobe32(n);
 				__syscall(sendto(u_fd, repl, annlen, 0
 	                , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in)));
 				++n;
+
             }
         }
     }
@@ -342,6 +369,7 @@ int main(int argc, char **argv) {
 	// clients array nullification
 	memset(&state.client, 0, sizeof(state.client));
 	lassert(vector_init(&state.sock_b, BC_FD_NUM));
+	linkedlist_init(&state.bullets);
     
     // map loading
 	char mapfile_name[PATH_MAX] = "res/propeller.bcsmap";
@@ -451,6 +479,9 @@ int main(int argc, char **argv) {
 
 		if (strcmp(buf, "help") == 0) {
 			printf("[$] Someday there will be a help. Now it's empty...\n");
+		}
+		else if(strcmp(buf, "info") == 0) {
+			log_print_cl_info(&state);
 		}
 		else {
 			printf("[$] Unknown command '%.40s'\n", buf);
