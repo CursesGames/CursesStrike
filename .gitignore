@@ -5,7 +5,7 @@ obj
 *.a
 *.so
 *.exe
-*logfile.log
+*.log
 make.config.prev
 make.config.now
 core

@@ -150,13 +150,14 @@ void send_announces(sigval_t argv) {
 	uint16_t player_count = state->player_count;
 	if(state->bullets.count > 0) {
 		// обработать пули
-		LINKED_LIST_ENTRY *lle;
+		LINKED_LIST_ENTRY *lle = NULL;
 		LIST_VALTYPE *bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
 		while(bullet_ptr != NULL) {
 			// tornem, commit faster, oh pleeease
 			// bullet_ptr->ptr is a pointer to BULLET structure
 			// there will be something like:
 			if(!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
+				free(bullet_ptr->ptr);
 			    bullet_ptr = linkedlist_throw(&state->bullets, &lle);
 			}
 			else {
@@ -244,7 +245,8 @@ void send_announces(sigval_t argv) {
 				|| cl_ptr->public_info.state == BCSCLST_PLAYING
 				|| cl_ptr->public_info.state == BCSCLST_RESPAWNING
             ) { // if clients[i] is not NULL
-                ann->index_self = htobe32(n);
+                ann->index_self = htobe16(n);
+				//ALOGI("Index self = %d\n", n);
 				__syscall(sendto(u_fd, repl, annlen, 0
 	                , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in)));
 				++n;
@@ -386,6 +388,11 @@ int main(int argc, char **argv) {
 		mapfile_name[strlen(mapfile_name) - 1] = '\0';
 	}
 
+	// allocate memory for overlay
+	state.map_overlay.width = state.map.width;
+	state.map_overlay.height = state.map.height;
+	state.map_overlay.map_primitives = (uint8_t*)malloc(state.map.width * state.map.height);
+
 	socklen_t addr_size = sizeof(sockaddr_in);
 
 	// Initialize UDP socket descriptor
@@ -414,6 +421,8 @@ int main(int argc, char **argv) {
 		, .sin_port = htobe16(BCSSERVER_DEFAULT_PORT)
 		, .sin_family = AF_INET
 	};
+
+	__syscall(setsockopt(state.sock_t, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
     __syscall(bind(state.sock_t, (sockaddr*)&addr_tcp, addr_size));
@@ -510,6 +519,7 @@ int main(int argc, char **argv) {
 	}
 	vector_free(&state.sock_b);
 	free(state.map.map_primitives);
+	free(state.map_overlay.map_primitives);
 	linkedlist_clear(&state.bullets);
 
     return EXIT_SUCCESS;

@@ -155,13 +155,15 @@ void *receiver_func(void *argv) {
 				ALOGI("Received announce\n");
 				BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
 				BCSCLIENT_PUBLIC *players = (BCSCLIENT_PUBLIC*)(ann + 1);
-				BCSBULLET *array_bullet = (BCSBULLET*)(players + ann->count);
+			
+				pfs->others.index_self = be16toh(ann->index_self);
+				pfs->others.count = be16toh(ann->count);
+
+				BCSBULLET *array_bullet = (BCSBULLET*)(players + pfs->others.count);
 				//pthread_mutex_lock(&pfs->mutex_self);
 				// copy self state
 				//pfs->self = players[be16toh(ann->index_self)];
-				pfs->others.index_self = be16toh(ann->index_self);
-				pfs->others.count = be16toh(ann->count);
-				memcpy(&pfs->others.array, players, sizeof(BCSCLIENT_PUBLIC) * pfs->others.count);
+				memcpy(pfs->others.array, players, sizeof(BCSCLIENT_PUBLIC) * pfs->others.count);
 				// convert to host from BE
 				for(size_t i = 0; i < pfs->others.count; ++i) {
 					pfs->others.array[i].direction = be32toh(pfs->others.array[i].direction);
@@ -173,7 +175,10 @@ void *receiver_func(void *argv) {
 				pfs->self = pfs->others.array[pfs->others.index_self];
 				// copy bullets
 				pfs->bullets.count = be16toh(ann->count_bullets);
-				memcpy(&pfs->bullets.array, array_bullet, sizeof(BCSBULLET) * pfs->bullets.count);
+				if(pfs->bullets.array != NULL)
+					free(pfs->bullets.array);
+				pfs->bullets.array = (BCSBULLET*)malloc(sizeof(BCSBULLET) * pfs->bullets.count);
+				memcpy(pfs->bullets.array, array_bullet, sizeof(BCSBULLET) * pfs->bullets.count);
 				// convert to host from BE
 				for(size_t i = 0; i < pfs->bullets.count; ++i) {
 					pfs->bullets.array[i].creator_id = be16toh(pfs->bullets.array[i].creator_id);
@@ -286,13 +291,13 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 
 	switch(action) {
 		case BCSACTION_DISCONNECT: break;
-		case BCSACTION_MOVE: msg.un.ints.int_lo = dir; break;
+		case BCSACTION_MOVE: msg.un.ints.int_lo = htobe32(dir); break;
 		case BCSACTION_FIRE: break;
 		case BCSACTION_ROTATE: {
 			switch(dir) {
 				case BCSDIR_LEFT:
 				case BCSDIR_RIGHT:
-					msg.un.ints.int_lo = dir;
+					msg.un.ints.int_lo = htobe32(dir);
 				break;
 
 				default: ALOGW("Wrong direction for rotation: %u\n", dir); return;
@@ -325,10 +330,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	WINDOW *below = pfs->below;
 	pthread_mutex_unlock(&pfs->mutex_self);
 
-	// copy a part of pad
-	// первые два параметра - верхний левый угол pad, с которого берём
-	// следующие четыре - куда на экран проецируем
-    nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+	nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// draw players
 	if(self.state == BCSCLST_PLAYING) {
@@ -368,6 +370,11 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	
 	pthread_mutex_unlock(&pfs->mutex_self);
 	nassert(wnoutrefresh(stdscr));
+
+	// copy a part of pad
+	// первые два параметра - верхний левый угол pad, с которого берём
+	// следующие четыре - куда на экран проецируем
+    nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 
 	// эта панелька наложится поверх карты
 	nassert(werase(below));
@@ -429,6 +436,10 @@ int main(int argc, char **argv) {
 			  .width = 0
 			, .height = 0
 			, .map_primitives = NULL
+		  }
+		, .bullets = {
+			  .array = NULL
+			, .count = 0
 		  }
 		, .mappad = NULL
 		, .below = NULL

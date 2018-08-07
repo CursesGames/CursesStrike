@@ -37,7 +37,6 @@ typedef struct {
 	struct {
 		uint16_t count;
 		BCSBULLET *array;
-
 	} bullets;
 	size_t frames;
 } BCSPLAYER_FULL_STATE;
