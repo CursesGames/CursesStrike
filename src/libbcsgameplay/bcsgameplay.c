@@ -36,14 +36,6 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int
         }
     }
 
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            printf("%d ", my_copy_primitives[i * width + j]);
-        }
-        puts("\n");
-    }
-    puts("\n");
-
     switch (bullet->direction) {
         case BCSDIR_LEFT:   // y - constant, x can move at negative direction 
             line_size = width * bullet_y;
