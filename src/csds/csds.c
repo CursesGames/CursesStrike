@@ -568,38 +568,43 @@ int main(int argc, char **argv) {
 	};
 	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));
 
-	usleep(100000);
-
-	// accept commands from stdin
-	char buf[PATH_MAX];
-	printf("[$] Welcome to the command prompt of dedicated server.\n");
-	printf("[$] Put in your commands, one per line, and press Enter.\n");
-	printf("[$] Start with 'help' if you are confused.\n");
-	printf("[$] Press Ctrl+D to stop Curses-Strike v0.%d server.\n", BCSPROTO_VERSION);
-
-	while(true) {
-		if(fgets(buf, PATH_MAX, stdin) == NULL)
-			break;
-		buf[strlen(buf) - 1] = '\0';
-
-		if (strcmp(buf, "help") == 0) {
-			printf("[$] Someday there will be a help. Now it's empty...\n");
-		}
-		else if (strcmp(buf, "info") == 0) {
-			log_print_cl_info(&state);
-		}
-		else if(strcmp(buf, "dump") == 0) {
-			dump_state(&state);
-			printf("[$] Dump is in 'dump_server.log' for you.\n");
-		}
-		else {
-			printf("[$] Unknown command '%.40s'\n", buf);
-		}
+	if (argc > 1 && strcmp(argv[1], "daemon") == 0) {
+		ALOGI("Daemonized mode\n");
+		pthread_join(threads[THREAD_UDP_MAIN], NULL);
 	}
+	else {
+		usleep(100000);
 
-	// User pressed Ctrl+D - terminate server
-	printf("[$] You pressed Ctrl+D, exiting gracefully\n");
+		// accept commands from stdin
+		char buf[PATH_MAX];
+		printf("[$] Welcome to the command prompt of dedicated server.\n");
+		printf("[$] Put in your commands, one per line, and press Enter.\n");
+		printf("[$] Start with 'help' if you are confused.\n");
+		printf("[$] Press Ctrl+D to stop Curses-Strike v0.%d server.\n", BCSPROTO_VERSION);
 
+		while(true) {
+			if(fgets(buf, PATH_MAX, stdin) == NULL)
+				break;
+			buf[strlen(buf) - 1] = '\0';
+
+			if (strcmp(buf, "help") == 0) {
+				printf("[$] Someday there will be a help. Now it's empty...\n");
+			}
+			else if (strcmp(buf, "info") == 0) {
+				log_print_cl_info(&state);
+			}
+			else if(strcmp(buf, "dump") == 0) {
+				dump_state(&state);
+				printf("[$] Dump is in 'dump_server.log' for you.\n");
+			}
+			else {
+				printf("[$] Unknown command '%.40s'\n", buf);
+			}
+		}
+
+		// User pressed Ctrl+D - terminate server
+		printf("[$] You pressed Ctrl+D, exiting gracefully\n");
+	}
 	// TODO: graceful shutdown
 	__syscall(timer_delete(timer_id));
 		for(int i = 0; i < THREAD_SPEC_COUNT; ++i) {
