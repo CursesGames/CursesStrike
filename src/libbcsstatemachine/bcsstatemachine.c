@@ -1,11 +1,16 @@
 #include <pthread.h>
 #include <endian.h>
+#include <alloca.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #include "bcsstatemachine.h"
 #include "clientarray.h"
 #include "../liblinux_util/linux_util.h"
 #include "../libbcsmap/bcsmap.h"
 #include "../libbcsproto/bcsproto.h"
+#include "../liblinkedlist/linkedlist.h"
+#include "../libbcsgameplay/bcsgameplay.h"
 
 bool bcsstatemachine_process_request(
 	  BCSSERVER_FULL_STATE *state
@@ -19,19 +24,19 @@ bool bcsstatemachine_process_request(
     }
 
     // TODO: добавить больше цветочков!
+    uint16_t player_count;
+    int i;
     BCSMSGREPLY reply; //reply to client
-    int id = search_client(state, src); // client id in array
     reply.packet_no = msg->packet_no; // packet to send number
+    int id = search_client(state, src); // client id in array
 
     pthread_mutex_lock(&state->mutex_self);
     int u_fd = state->sock_u; // copy descriptor from state
     pthread_mutex_unlock(&state->mutex_self);
-    int x, y; //coordinates for moving
-
     switch(be32toh(msg->action)){
-        case BCSACTION_CONNECT: // client sent CONNECT
+        case BCSACTION_CONNECT: // client sent CONNECT;
             if(search_client(state, src) == -1){//ONLY IF THERE IS NO SUCH CLIENT IN ARRAY
-                printf("received CONNECT from client\n");
+                ALOGW("received CONNECT from client");
                 // Add client to array
                 switch(add_client(state, src)){
                     case -1: // clients limit is settled
@@ -42,11 +47,14 @@ bool bcsstatemachine_process_request(
                         pthread_mutex_lock(&state->mutex_self);
                         state->client[id].public_info.state = BCSCLST_CONNECTING;
                         pthread_mutex_unlock(&state->mutex_self);
+                        ALOGW("state to CONNECTING");
                         reply.type = htobe32(BCSREPLT_MAP);
                         log_print_cl_info(state);
                 }
-                __syscall(gettimeofday(&(reply.time_gen), NULL));
-                __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 0, (sockaddr*)src, sizeof(sockaddr_in)));
+                __syscall(gettimeofday(&reply.time_gen, NULL));
+                htobe16(&reply.time_gen);
+                __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                          0, (sockaddr*)src, sizeof(sockaddr_in)));
             }
             break;
             
@@ -56,8 +64,16 @@ bool bcsstatemachine_process_request(
                 || (state->client[id].public_info.state == BCSCLST_PLAYING)
                 || (state->client[id].public_info.state == BCSCLST_RESPAWNING)){
                 state->client[id].public_info.state = BCSCLST_CONNECTED;
+                reply.type = htobe32(BCSREPLT_ACK);
+            }
+            else{
+                reply.type = htobe32(BCSREPLT_NACK);
             }
             pthread_mutex_unlock(&state->mutex_self);
+            __syscall(gettimeofday(&reply.time_gen, NULL));
+            htobe16(&reply.time_gen);
+            __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
+                             0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
                 
         case BCSACTION_DISCONNECT:
@@ -65,15 +81,17 @@ bool bcsstatemachine_process_request(
             delete_client(state, src);
             pthread_mutex_unlock(&state->mutex_self);
             reply.type = htobe32(BCSREPLT_ACK);
-            __syscall(gettimeofday(&(reply.time_gen), NULL));
-            __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 0, (sockaddr*)src, sizeof(sockaddr_in)));
+            __syscall(gettimeofday(&reply.time_gen, NULL));
+            htobe16(&reply.time_gen);
+            __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                             0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
 
         case BCSACTION_MOVE:
             pthread_mutex_lock(&state->mutex_self);
             if(state->client[id].public_info.state == BCSCLST_PLAYING){
-                x = state->client[id].public_info.position.x;
-                y = state->client[id].public_info.position.y;
+                uint16_t x = state->client[id].public_info.position.x;
+                uint16_t y = state->client[id].public_info.position.y;
                 switch(be32toh(msg->un.ints.int_lo)) {
                     case BCSDIR_LEFT:
                         x--;
@@ -120,6 +138,16 @@ bool bcsstatemachine_process_request(
             if(state->client[id].public_info.state == BCSCLST_CONNECTED){
                 state->client[id].public_info.state = BCSCLST_PLAYING;
             }
+            else if(state->client[id].public_info.state == BCSCLST_PLAYING){
+                BCSBULLET *bullet =  malloc(sizeof(BCSBULLET));
+                bullet->creator_id = id;
+                bullet->x = state->client[id].public_info.position.x;
+                bullet->y = state->client[id].public_info.position.y;
+                bullet->direction = state->client[id].public_info.direction;
+                LIST_VALTYPE val = { .ptr = bullet };
+                linkedlist_push_back(&state->bullets, val);
+
+            }
             pthread_mutex_unlock(&state->mutex_self);
             break;
 
@@ -131,10 +159,29 @@ bool bcsstatemachine_process_request(
         //    reply->type = htobe32(BCSREPLT_NACK);
         //    break;
 
-        //case BCSACTION_REQSTATS: //UNDEFINED
-        //    reply->type = htobe32(BCSREPLT_NACK);
-        //    break;
+        case BCSACTION_REQSTATS: //UNDEFINED
+            player_count = return_clients_size(state); //htobe
 
+            BCSMSGREPLY *stats_to_send = alloca(
+              sizeof(BCSMSGREPLY)
+            + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count
+            );
+
+            stats_to_send->type = htobe32(BCSREPLT_STATS);
+            __syscall(gettimeofday(&(stats_to_send->time_gen), NULL));
+            htobe16(&(stats_to_send->time_gen));
+
+            BCSCLIENT_PUBLIC_EXT *array = (BCSCLIENT_PUBLIC_EXT*)(stats_to_send + 1);
+               for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
+                   if(state->client[i].public_info.state != BCSCLST_FREESLOT){
+                        *array = state->client[i].public_ext_info;
+                        array++;
+                    }
+                }
+                __syscall(sendto(u_fd, stats_to_send, 
+                          sizeof(BCSMSGREPLY) + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count,
+                          0, (sockaddr*)src, sizeof(sockaddr_in)));
+            break;
         //default:
             
     }

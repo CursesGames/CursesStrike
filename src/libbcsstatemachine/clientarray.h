@@ -7,8 +7,6 @@
 #include "../libbcsmap/bcsmap.h"
 #include "../libbcsstatemachine/bcsstatemachine.h"
 
-// TODO: добавить больше цветочков!
-void init_start_xy (BCSSERVER_FULL_STATE *state, uint16_t start_x, uint16_t start_y);
 uint16_t return_clients_size(BCSSERVER_FULL_STATE *state);
 int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client);
 int search_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client);
