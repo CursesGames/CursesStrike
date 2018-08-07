@@ -89,12 +89,10 @@ bool bcsstatemachine_process_request(
             if(state->client[id].public_info.state == BCSCLST_PLAYING){
                 uint16_t x = state->client[id].public_info.position.x;
                 uint16_t y = state->client[id].public_info.position.y;
-                ALOGW("direction %d\n", be32toh(msg->un.ints.int_lo));
                 switch(be32toh(msg->un.ints.int_lo)) {
                     case BCSDIR_LEFT:
-                        ALOGW("LEFT\n");
                         x--;
-                        if((x != 0)
+                        if((x >= 0)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
                             && (isFree(state, x, y) == true)){
                             state->client[id].public_info.position.x--;
@@ -102,9 +100,8 @@ bool bcsstatemachine_process_request(
                         break;
                         
                     case BCSDIR_RIGHT:
-                        ALOGW("RIGHT\n");
                         x++;
-                        if((x != state->map.width)
+                        if((x < state->map.width)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
                             && (isFree(state, x, y) == true)){
                             state->client[id].public_info.position.x++;
@@ -112,9 +109,8 @@ bool bcsstatemachine_process_request(
                         break;
 
                     case BCSDIR_UP:
-                        ALOGW("UP\n");
                         y--;
-                        if((y != 0)
+                        if((y >= 0)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
                             && (isFree(state, x, y) == true)){
                             state->client[id].public_info.position.y--;
@@ -122,9 +118,8 @@ bool bcsstatemachine_process_request(
                         break;
 
                     case BCSDIR_DOWN:
-                        ALOGW("DOWN\n");
                         y++;
-                        if((y != state->map.height)
+                        if((y < state->map.height)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
                             && (isFree(state, x, y) == true)){
                             state->client[id].public_info.position.y++;
@@ -157,13 +152,11 @@ bool bcsstatemachine_process_request(
             pthread_mutex_lock(&state->mutex_self);
             switch(be32toh(msg->un.ints.int_lo)) {
                 case BCSDIR_RIGHT:
-
-                    state->client[id].public_info.direction = BCSDIR_RIGHT;
+                    state->client[id].public_info.direction = (state->client[id].public_info.direction + 1) % 4;
                     break;
 
                 case BCSDIR_LEFT:
-                    state->client[id].public_info.direction = BCSDIR_LEFT;
-                    
+                    state->client[id].public_info.direction = (state->client[id].public_info.direction + 3) % 4;
                     break;
             }
             pthread_mutex_unlock(&state->mutex_self);
