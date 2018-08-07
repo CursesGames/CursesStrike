@@ -34,10 +34,11 @@ bool bcsstatemachine_process_request(
     pthread_mutex_lock(&state->mutex_self);
     int u_fd = state->sock_u; // copy descriptor from state
     pthread_mutex_unlock(&state->mutex_self);
+
     switch(be32toh(msg->action)){
         case BCSACTION_CONNECT: // client sent CONNECT;
             if(search_client(state, src) == -1){//ONLY IF THERE IS NO SUCH CLIENT IN ARRAY
-                ALOGW("received CONNECT from client");
+                ALOGW("received CONNECT from client\n");
                 // Add client to array
                 switch(add_client(state, src)){
                     case -1: // clients limit is settled
@@ -49,7 +50,7 @@ bool bcsstatemachine_process_request(
                         state->player_count++;
                         state->client[id].public_info.state = BCSCLST_CONNECTING;
                         pthread_mutex_unlock(&state->mutex_self);
-                        ALOGW("state to CONNECTING");
+                        ALOGW("state to CONNECTING\n");
                         reply.type = htobe32(BCSREPLT_MAP);
                         log_print_cl_info(state);
                 }
@@ -60,6 +61,7 @@ bool bcsstatemachine_process_request(
             break;
             
         case BCSACTION_CONNECT2:// client sent CONNECT2
+            ALOGW("received CONNECT2 from client\n");
             pthread_mutex_lock(&state->mutex_self);
             if((state->client[id].public_info.state == BCSCLST_CONNECTING)
                 || (state->client[id].public_info.state == BCSCLST_PLAYING)
@@ -77,6 +79,7 @@ bool bcsstatemachine_process_request(
             break;
                 
         case BCSACTION_DISCONNECT:
+            ALOGW("received DISCONNECT from client\n");
             delete_client(state, src);
             reply.type = htobe32(BCSREPLT_ACK);
             //__syscall(gettimeofday(&reply.time_gen, NULL));
@@ -85,6 +88,7 @@ bool bcsstatemachine_process_request(
             break;
 
         case BCSACTION_MOVE:
+            ALOGW("received MOVE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             if(state->client[id].public_info.state == BCSCLST_PLAYING){
                 uint16_t x = state->client[id].public_info.position.x;
@@ -131,6 +135,7 @@ bool bcsstatemachine_process_request(
             break;
 
         case BCSACTION_FIRE:
+            ALOGW("received FIRE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             if(state->client[id].public_info.state == BCSCLST_CONNECTED){
                 state->client[id].public_info.state = BCSCLST_PLAYING;
@@ -148,7 +153,8 @@ bool bcsstatemachine_process_request(
             pthread_mutex_unlock(&state->mutex_self);
             break;
         
-        case BCSACTION_ROTATE: //UNDEFINED
+        case BCSACTION_ROTATE:
+            ALOGW("received ROTATE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch(be32toh(msg->un.ints.int_lo)) {
                 case BCSDIR_RIGHT:
@@ -163,6 +169,7 @@ bool bcsstatemachine_process_request(
             break;
 
         case BCSACTION_REQSTATS:
+            ALOGW("received REQSTATS from client\n");
             player_count = return_clients_size(state); //htobe
 
             BCSMSGREPLY *stats_to_send = alloca(
