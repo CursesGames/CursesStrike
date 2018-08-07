@@ -3,6 +3,7 @@
 #include <alloca.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "bcsstatemachine.h"
 #include "clientarray.h"
@@ -88,9 +89,12 @@ bool bcsstatemachine_process_request(
             if(state->client[id].public_info.state == BCSCLST_PLAYING){
                 ALOGW("received MOVE from client");
                 uint16_t x = state->client[id].public_info.position.x;
+                ALOGW("init x pos = %d", x);
                 uint16_t y = state->client[id].public_info.position.y;
+                ALOGW("init x pos = %d", y);
                 switch(be32toh(msg->un.ints.int_lo)) {
                     case BCSDIR_LEFT:
+                        ALOGW("LEFT");
                         x--;
                         if((x != 0)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
@@ -100,6 +104,7 @@ bool bcsstatemachine_process_request(
                         break;
                         
                     case BCSDIR_RIGHT:
+                        ALOGW("RIGHT");
                         x++;
                         if((x != state->map.width)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
@@ -109,6 +114,7 @@ bool bcsstatemachine_process_request(
                         break;
 
                     case BCSDIR_UP:
+                        ALOGW("UP");
                         y--;
                         if((y != 0)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
@@ -118,6 +124,7 @@ bool bcsstatemachine_process_request(
                         break;
 
                     case BCSDIR_DOWN:
+                        ALOGW("DOWN");
                         y++;
                         if((y != state->map.height)
                             && ((state->map.map_primitives[y * state->map.width + x]) == PUNIT_OPEN_SPACE)
@@ -179,7 +186,9 @@ bool bcsstatemachine_process_request(
             pthread_mutex_lock(&state->mutex_self);
                for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
                    if(state->client[i].public_info.state != BCSCLST_FREESLOT){
-                        *array = state->client[i].public_ext_info;
+                        array->frags = htobe16(state->client[i].public_ext_info.frags);
+                        array->frags = htobe16(state->client[i].public_ext_info.deaths);
+                        strncpy(array->nickname, state->client[i].public_ext_info.nickname, BCSPLAYER_NICKLEN + 1);
                         array++;
                     }
                 }

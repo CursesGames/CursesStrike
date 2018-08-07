@@ -83,8 +83,7 @@ int search_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) 
     for (i = 0; i < BCSSERVER_MAXCLIENTS; i++) {
         if ((state->client[i].public_info.state != BCSCLST_FREESLOT)
             && (state->client[i].private_info.endpoint.sin_addr.s_addr == addr_client->sin_addr.s_addr) 
-            && (state->client[i].private_info.endpoint.sin_port == addr_client->sin_port) 
-            && (state->client[i].private_info.endpoint.sin_family == addr_client->sin_family)) {
+            && (state->client[i].private_info.endpoint.sin_port == addr_client->sin_port)) {
             num = i;
             break;
         }
@@ -111,6 +110,7 @@ int delete_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client)
     }
     pthread_mutex_lock(&state->mutex_self);
     memset(&state->client[num], 0, sizeof(BCSCLIENT));
+    state->player_count--;
     pthread_mutex_unlock(&state->mutex_self);
 
     return 0;
