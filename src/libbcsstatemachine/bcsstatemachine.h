@@ -4,6 +4,7 @@
 #include "../liblinux_util/mscfix.h"
 
 #include <stdbool.h>
+#include <pthread.h>
 #include <ncursesw/ncurses.h> // just to export window type, nothing personal
 #include "../libbcsproto/bcsproto.h"
 #include "../libbcsmap/bcsmap.h"
@@ -33,6 +34,11 @@ typedef struct {
 	BCSMAP map_overlay;
 	WINDOW *mappad;
 	WINDOW *below;
+	struct {
+		uint16_t count;
+		BCSBULLET *array;
+
+	} bullets;
 	size_t frames;
 } BCSPLAYER_FULL_STATE;
 
