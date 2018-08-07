@@ -13,8 +13,8 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int
     uint16_t player_count = state->player_count;  // number of players in server
     uint16_t height = state->map.height;
     uint16_t width = state->map.width;
-    int16_t bullet_x = bullet->x;
-    int16_t bullet_y = bullet->y;
+    uint16_t bullet_x = bullet->x;
+    uint16_t bullet_y = bullet->y;
     uint16_t client_x;
     uint16_t client_y;
     uint8_t tmp_primitive;
@@ -48,9 +48,10 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int
         case BCSDIR_LEFT:   // y - constant, x can move at negative direction 
             line_size = width * bullet_y;
             for (int i = 0; i < steps; ++i) {
-                --bullet_x;
-                if (bullet_x < 0) {
+                if (bullet_x == 0) {
                     return false;
+                } else {
+                    --bullet_x;
                 }
                 tmp_primitive = my_copy_primitives[line_size + bullet_x];
                 switch (tmp_primitive) {
@@ -72,7 +73,11 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int
         case BCSDIR_RIGHT:  // y - constant, x can move at positive direction
             line_size = width * bullet_y;
             for (int i = 0; i < steps; ++i) {
-                ++bullet_x;
+                if (bullet_x == width) {
+                    return false;
+                } else {
+                    ++bullet_x;
+                }
                 if (bullet_x > width) {
                     return false;
                 }
@@ -95,9 +100,10 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int
             break;
         case BCSDIR_UP:     // x - constant, y can move at negative direction
             for (int i = 0; i < steps; ++i) {
-                --bullet_y;
-                if (bullet_y < 0) {
+                if (bullet_y == 0) {
                     return false;
+                } else {
+                    --bullet_y;
                 }
                 tmp_primitive = my_copy_primitives[width * bullet_y + bullet_x];
                 switch (tmp_primitive) {
@@ -118,9 +124,10 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int
             break;
         case BCSDIR_DOWN:   // x - cinstant, y can move at positive direction
             for (int i = 0; i < steps; ++i) {
-                ++bullet_y;
-                if (bullet_y > height) {
+               if (bullet_y == height) {
                     return false;
+                } else {
+                    ++bullet_y;
                 }
                 tmp_primitive = my_copy_primitives[width * bullet_y + bullet_x];
                 switch (tmp_primitive) {

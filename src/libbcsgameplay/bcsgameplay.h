@@ -10,8 +10,8 @@
 
 typedef struct __bcs_bullet {
     size_t creator_id;
-    int16_t x;
-    int16_t y;
+    uint16_t x;
+    uint16_t y;
     BCSDIRECTION direction;
 } BCSBULLET;
 
