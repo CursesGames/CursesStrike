@@ -636,16 +636,12 @@ int main(int argc, char **argv) {
 					}
 					else {
 						BCSMSGREPLY repl = { .type = htobe32(BCSREPLT_SHUTDOWN) };
-						sendto2(state.sock_u,
-							&repl,
-							sizeof(BCSMSGREPLY),
-							MSG_DONTWAIT,
-							(sockaddr*)&(state.client[id].private_info.endpoint),
-							sizeof(sockaddr_in));
+						sendto2(state.sock_u, &repl, sizeof(BCSMSGREPLY), MSG_DONTWAIT
+							,(sockaddr*)&(state.client[id].private_info.endpoint), sizeof(sockaddr_in));
 						memset(&state.client[id], 0, sizeof(BCSCLIENT));
 						printf("[$] Kicked %u for you.\n", id);
 					}
-					pthread_mutex_lock(&state.mutex_self);
+					pthread_mutex_unlock(&state.mutex_self);
 				}
 				else {
 					printf("[$] Sorry you can't!\n");

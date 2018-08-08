@@ -234,6 +234,7 @@ void *receiver_func(void *argv) {
 			break;
 
 			case BCSREPLT_SHUTDOWN:
+				curs_set(true);
 				endwin();
 				printf(ANSI_COLOR_RED "Server shutted down" ANSI_CLRST "\n");
 				exit(2);
@@ -342,7 +343,6 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 		default: ALOGW("Wrong action type %u\n", action); return;
 	}
 
-	// TODO: sendto()
 	bcsproto_new_packet(&msg);
 	pthread_mutex_lock(&pfs->mutex_self);
 	sendto(pfs->sockfd, &msg, sizeof(msg), 0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
@@ -350,7 +350,7 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 }
 
 void draw_window(BCSPLAYER_FULL_STATE *pfs) {
-	char buf[256];
+	//char buf[256];
 	pthread_mutex_lock(&pfs->mutex_frame);
     
     int w, h;
@@ -358,20 +358,21 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 
 	// блокируем этот мьютекс только в случае чтения изменяющихся данных или записи изменений
 	pthread_mutex_lock(&pfs->mutex_self);
-	size_t frames = ++pfs->frames;
+	//size_t frames = 
+	++pfs->frames;
 	BCSCLIENT_PUBLIC self = pfs->self;
 	WINDOW *mappad = pfs->mappad;
 	WINDOW *mapobj = pfs->mapobj;
-	WINDOW *below = pfs->below;
+	//WINDOW *below = pfs->below;
 	WINDOW *stats = pfs->stats;
 
 	// стата
 	bool show_stats = pfs->show_stats;
 	pthread_mutex_unlock(&pfs->mutex_self);
 
-	nassert(clearok(stdscr, true));
-	nassert(touchwin(stdscr));
-	nassert(touchwin(mapobj));
+	//nassert(clearok(stdscr, true));
+	//nassert(touchwin(stdscr));
+	//nassert(touchwin(mapobj));
 	nassert(werase(stdscr));
 	nassert(werase(mapobj));
 
@@ -429,8 +430,10 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// copy a part of pad
 	// первые два параметра - верхний левый угол pad, с которого берём
 	// следующие четыре - куда на экран проецируем
+	//nassert(touchwin(mappad));
+	//nassert(touchwin(mapobj));
 	//nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
-	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, false));
+	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
 	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
 	//nassert(pnoutrefresh(mapobj, 0, 0, 0, 0, 0 + h, 0 + w));
 	//nassert(wnoutrefresh(mapobj));
@@ -441,9 +444,9 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	}
 
 	// эта панелька наложится поверх карты
-	sprintf(buf, "Frames: %zu", frames);
-	nassert(mvwaddstr(below, 0, 1, buf));
-	nassert(overlay(below, stdscr));
+	//sprintf(buf, "Frames: %zu", frames);
+	//nassert(mvwaddstr(below, 0, 1, buf));
+	//nassert(overlay(below, stdscr));
 
 	nassert(wnoutrefresh(stdscr));
 
@@ -458,7 +461,6 @@ int main(int argc, char **argv) {
 	//    ИНИЦИАЛИЗАЦИЯ    //
 	/////////////////////////
 
-	// TODO: быстрое подключение через командную строку
 	verbose = true;
 
 	// The library uses the locale which the calling program has initialized.
@@ -525,7 +527,12 @@ int main(int argc, char **argv) {
 	char buf[BCSDGRAM_MAX];
 	char addrstr[INET_ADDRSTRLEN];
 
-	lassert(getlogin_r(pfs.self_ext.nickname, BCSPLAYER_NICKLEN) == 0);
+	if(getlogin_r(pfs.self_ext.nickname, BCSPLAYER_NICKLEN) != 0) {
+		if (getenv("LOGNAME") != NULL)
+			strncpy(pfs.self_ext.nickname, getenv("LOGNAME"), BCSPLAYER_NICKLEN);
+		else
+			strncpy(pfs.self_ext.nickname, cuserid(NULL), BCSPLAYER_NICKLEN);
+	}
 
 	if(argc > 1) {
 		// try to get endpoint from argv[1]
@@ -594,7 +601,7 @@ start_bcast_scan:
 	vector_free(&ifaces);
 
 	VECTOR servers;
-	lassert(vector_init(&servers, 10)); // TODO: get rid of magic number
+	lassert(vector_init(&servers, BCSSERVERS_APPROX));
 	uint32_t number = 0;
 	struct timeval tv_last, tv_now, tv_diff;
 	__syscall(gettimeofday(&tv_last, NULL));
@@ -676,7 +683,6 @@ next_epevent:
 		}
 	}
 
-	// TODO: close b/cast listeners there?
 	for(size_t i = 0; i < iface_count; i++) {
 		close(ubcls[i]);
 	}
@@ -878,9 +884,10 @@ connect_to:
 	nassert(noecho());
 	idcok(stdscr, true);
 	nassert(idlok(stdscr, false));
-	nassert(nonl());
+	nassert(idlok(curscr, false));
 	nassert(leaveok(stdscr, true));
-	//nassert(nodelay(stdscr, true));
+	nassert(leaveok(curscr, true));
+	nassert(nonl());
 	//nassert(use_default_colors()); // for transparency?
 
 	nassert(start_color());
@@ -897,6 +904,9 @@ connect_to:
 	getmaxyx(stdscr, wnd_ymax, wnd_xmax);
 
 	nassert(pfs.mapobj = newwin(wnd_ymax, wnd_xmax, 0, 0));
+	idcok(pfs.mapobj, true);
+	nassert(idlok(pfs.mapobj, false));
+	nassert(leaveok(pfs.mapobj, false));
 
 	nassert(pfs.below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
 	nassert(wbkgd(pfs.below, COLOR_PAIR(CPAIR_DEFAULT)));
@@ -927,7 +937,6 @@ connect_to:
 	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
 	bool has_pressed = true;
-	int64_t key;
 	while(true) {
 		/////////////////////////
 		//      ОТРИСОВКА      //
@@ -941,7 +950,8 @@ connect_to:
 		//         ВВОД        //
 		/////////////////////////
 		//nassert(nodelay(stdscr, true));
-		key = raw_wgetch(stdscr);
+		int64_t key = raw_wgetch(stdscr);
+		FILE *f;
 		switch(key) {
 			/////////////////////////
 			//       ОБРАБОТКА     //
@@ -951,6 +961,16 @@ connect_to:
 			case KEY_F(10): // F10
 				do_action(&pfs, BCSACTION_DISCONNECT, BCSDIR_UNDEF);
 				goto loop_leave;
+
+			case KEY_F(8): { // F8
+				pthread_mutex_lock(&pfs.mutex_frame);
+				f = fopen("stdscr.ncurses.log", "wb"); putwin(stdscr, f); fclose(f);
+				f = fopen("curscr.ncurses.log", "wb"); putwin(curscr, f); fclose(f);
+				f = fopen("newscr.ncurses.log", "wb"); putwin(newscr, f); fclose(f);
+				f = fopen("mappad.ncurses.log", "wb"); putwin(pfs.mappad, f); fclose(f);
+				f = fopen("mapobj.ncurses.log", "wb"); putwin(pfs.mapobj, f); fclose(f);
+				pthread_mutex_unlock(&pfs.mutex_frame);
+			} break;
 
 			case RAW_KEY_TAB:
 							do_action(&pfs, BCSACTION_REQSTATS, BCSDIR_UNDEF); 
@@ -988,12 +1008,13 @@ connect_to:
 		if (has_pressed) {
 			usleep(75000);
 			// skip key press queue
-			nodelay(stdscr, true);
-			while(true) {
-				if(wgetch(stdscr) == ERR)
-					break;
-			}
-			nodelay(stdscr, false);
+			//nodelay(stdscr, true);
+			//while(true) {
+			//	if(wgetch(stdscr) == ERR)
+			//		break;
+			//}
+			//nodelay(stdscr, false);
+			nassert(flushinp());
 		}
 	}
 
