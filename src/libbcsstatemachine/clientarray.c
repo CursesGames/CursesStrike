@@ -46,30 +46,13 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BC
     int num = -1, flag = -1;
 
     pthread_mutex_lock(&state->mutex_self);
-    // init coordinates
-    // we need flag in order not to enter the cycle without using return
-    // (because we use mutex)
-    for (j = 0; j < state->map.height; j++) {
-        for (k = 0; k < state->map.width; k++) {
-            if((flag == -1)
-                &&(state->map.map_primitives[j * state->map.width + k] == PUNIT_OPEN_SPACE)
-                && (isFree(state, k, j) == true)) {
-                x = k;
-                y = j;
-                flag = 0;
-            }
-        }
-    }
-    if ((flag == 0)
-        && (be32toh(cl_msg->un.ints.int_lo) == BCSPROTO_VERSION)) {
+    if (be32toh(cl_msg->un.ints.int_lo) == BCSPROTO_VERSION) {
         for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
             if ((state->client[i].public_info.state) == BCSCLST_FREESLOT){
                 state->client[i].private_info.endpoint = *addr_client; // client endpoint
                 __syscall(gettimeofday(&(state->client[i].private_info.time_last_dgram), NULL)); 
                 state->client[i].public_info.state = BCSCLST_CONNECTING; // init state = wait for map
                 state->client[i].public_info.direction = BCSDIR_UP; // init direction
-                state->client[i].public_info.position.y = y; // y-coordinate
-                state->client[i].public_info.position.x = x; // x-coordinate
                 num = i;
                 nick = (char *)(cl_msg + 1); //nickname
                 uint32_t name_lenth = be32toh(cl_msg->un.ints.int_hi); //nickname lenth
