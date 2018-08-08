@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "bcsstatemachine.h"
 #include "clientarray.h"
@@ -14,10 +15,10 @@
 #include "../libbcsgameplay/bcsgameplay.h"
 
 bool bcsstatemachine_process_request(
-	  BCSSERVER_FULL_STATE *state
-	, sockaddr_in *src
-	, BCSMSG *msg
-	, ssize_t msglen
+      BCSSERVER_FULL_STATE *state
+    , sockaddr_in *src
+    , BCSMSG *msg
+    , ssize_t msglen
 ) {
 
     int id = search_client(state, src); // return -1 if it's new client
@@ -33,6 +34,7 @@ bool bcsstatemachine_process_request(
     BCSMSGREPLY reply; //reply to client
     BCSBULLET *bullet;
     reply.packet_no = msg->packet_no; // packet to send number
+    struct timeval val_time, res;
     uint16_t x, y;
     bool flag = true;
 
@@ -177,21 +179,33 @@ bool bcsstatemachine_process_request(
                     break;
 
                 case BCSCLST_PLAYING:
-                    bullet = malloc(sizeof(BCSBULLET));
-                    bullet->creator_id = id;
-                    bullet->x = state->client[id].public_info.position.x;
-                    bullet->y = state->client[id].public_info.position.y;
-                    bullet->direction = state->client[id].public_info.direction;
-                    LIST_VALTYPE val = { .ptr = bullet };
-                    lassert(linkedlist_push_back(&state->bullets, val));
+                    __syscall(gettimeofday(&val_time, NULL));
+                    timersub(&val_time, &state->client[id].private_info.time_last_fire, &res);
+                    //ALOGI("res time: %ld.%06ld\n", res.tv_sec, res.tv_usec);
+                    val_time.tv_sec = 0;
+                    val_time.tv_usec = 333333;
+                    if (timercmp(&res, &val_time, >=) == true) {
+                        //ALOGI("time norm");
+                        bullet =  malloc(sizeof(BCSBULLET));
+                        bullet->creator_id = id;
+                        bullet->x = state->client[id].public_info.position.x;
+                        bullet->y = state->client[id].public_info.position.y;
+                        bullet->direction = state->client[id].public_info.direction;
+                        LIST_VALTYPE val = { .ptr = bullet };
+                        linkedlist_push_back(&state->bullets, val);
+                        __syscall(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
+                    }
+                    else{
+                        flag = false;
+                    }
                     break;
 
-                default:
-                    reply.type = htobe32(BCSREPLT_NACK);
-                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
-                                     0, (sockaddr*)src, sizeof(sockaddr_in)));
-                    flag = false;
-                    break;
+                    default:
+                        reply.type = htobe32(BCSREPLT_NACK);
+                        __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                                         0, (sockaddr*)src, sizeof(sockaddr_in)));
+                        flag = false;
+                        break;
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
