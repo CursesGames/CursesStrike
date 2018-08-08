@@ -20,7 +20,8 @@ bool bcsstatemachine_process_request(
 	, ssize_t msglen
 ) {
     //there is no client with such endpoint in array and this client did not send CONNECT
-    if((search_client(state, src) == -1) && (be32toh(msg->action) != BCSACTION_CONNECT)){
+    if((search_client(state, src) == -1) 
+        && (be32toh(msg->action) != BCSACTION_CONNECT)){
         return false;
     }
 
@@ -215,7 +216,7 @@ bool bcsstatemachine_process_request(
 
             size_t annlen =   sizeof(BCSMSGREPLY)
                             + sizeof(BCSMSGANNOUNCE) 
-                            + sizeof(BCSCLIENT_PUBLIC) * player_count;
+                            + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count;
 
             BCSCLIENT_PUBLIC_EXT *array = (BCSCLIENT_PUBLIC_EXT*)(ann + 1);
             pthread_mutex_lock(&state->mutex_self);
