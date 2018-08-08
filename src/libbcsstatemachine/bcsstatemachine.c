@@ -168,8 +168,8 @@ bool bcsstatemachine_process_request(
             switch(state->client[id].public_info.state){
                 case BCSCLST_CONNECTED:
                     state->client[id].public_info.state = BCSCLST_RESPAWNING;
-                    __syscall(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
-                    
+                    //__syscall(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
+                    bcsgameplay_respawn(state, id);
                     break;
 
                 case BCSCLST_PLAYING:
