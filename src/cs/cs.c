@@ -337,7 +337,10 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 		case BCSACTION_REQSTATS: {
 			pthread_mutex_lock(&pfs->mutex_self);
 			pfs->show_stats = !pfs->show_stats;
+			bool request_stats = pfs->show_stats;
 			pthread_mutex_unlock(&pfs->mutex_self);
+			if(!request_stats)
+				return;
 		} break;
 
 		default: ALOGW("Wrong action type %u\n", action); return;

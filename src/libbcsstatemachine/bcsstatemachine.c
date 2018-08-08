@@ -21,6 +21,10 @@ bool bcsstatemachine_process_request(
     , ssize_t msglen
 ) {
 
+// TODO: 
+// Str1ker, 09.08.2018: don't send even NACKS when in-game
+// (иногда мне в клиент в игровом режиме прилетают наки, проверить на это нужно)
+
     int id = search_client(state, src); // return -1 if it's new client
     //there is no client with such endpoint in array and this client did not send CONNECT or REQSTATS
     if((id == -1) 
@@ -186,7 +190,7 @@ bool bcsstatemachine_process_request(
                     val_time.tv_usec = 333333;
                     if (timercmp(&res, &val_time, >=) == true) {
                         //ALOGI("time norm");
-                        bullet =  malloc(sizeof(BCSBULLET));
+                        bullet = malloc(sizeof(BCSBULLET));
                         bullet->creator_id = id;
                         bullet->x = state->client[id].public_info.position.x;
                         bullet->y = state->client[id].public_info.position.y;
@@ -195,17 +199,17 @@ bool bcsstatemachine_process_request(
                         linkedlist_push_back(&state->bullets, val);
                         __syscall(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
                     }
-                    else{
+                    else {
                         flag = false;
                     }
                     break;
 
-                    default:
-                        reply.type = htobe32(BCSREPLT_NACK);
-                        __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
-                                         0, (sockaddr*)src, sizeof(sockaddr_in)));
-                        flag = false;
-                        break;
+                default:
+                    reply.type = htobe32(BCSREPLT_NACK);
+                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                                     0, (sockaddr*)src, sizeof(sockaddr_in)));
+                    flag = false;
+                    break;
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
@@ -230,10 +234,11 @@ bool bcsstatemachine_process_request(
                     }
                     break;
 
-                default:
+				case BCSCLST_CONNECTING:
                     reply.type = htobe32(BCSREPLT_NACK);
                     __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
+				default:
                     flag = false;
                     break;
             }
