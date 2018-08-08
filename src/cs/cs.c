@@ -852,7 +852,7 @@ connect_to:
 	nassert(keypad(stdscr, true));
 	nassert(curs_set(false));
 	nassert(noecho());
-	nassert(nodelay(stdscr, true));
+	//nassert(nodelay(stdscr, true));
 	//nassert(use_default_colors()); // for transparency?
 
 	nassert(start_color());
