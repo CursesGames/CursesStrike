@@ -149,11 +149,15 @@ void send_announces(sigval_t argv) {
 	int u_fd = state->sock_u;
 	uint16_t player_count = state->player_count;
 	if(state->bullets.count > 0) {
-		// обработать пули
 		LINKED_LIST_ENTRY *lle = NULL;
 		LIST_VALTYPE *bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
+		// overlay the latest state snapshot changes on the map
+		// (TODO) accounting for the destruction of boxes
+		// now only the position of clients is taken into account 
+		bcsgameplay_map_overlay_create(state);
 		while(bullet_ptr != NULL) {
 			// tornem, commit faster, oh pleeease
+			// yeeees, yeees, i'm here
 			// bullet_ptr->ptr is a pointer to BULLET structure
 			// there will be something like:
 			if(!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
