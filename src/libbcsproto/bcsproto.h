@@ -11,6 +11,8 @@
 // this include is important on MIPS for `struct timeval'
 // ReSharper disable once CppUnusedIncludeDirective
 #include <sys/time.h>
+#include "../liblinux_util/linux_util.h"
+#include "timeval16.h"
 
 ///////////////////////////////////////////////////
 //          ДОГОВОРЁННОСТЬ ПО ПРОТОКОЛУ          //
@@ -60,6 +62,9 @@
 #define NICK_SIZE BCSPLAYER_NICKLEN
 #define CLIENTS_NUM BCSSERVER_MAXCLIENTS
 
+STATIC_ASSERT(sizeof(struct timeval) == 16);
+STATIC_ASSERT(sizeof(struct sockaddr_in) == 16);
+
 // unions to simplify broadcasting
 typedef union __bcast_un {
 	struct {
@@ -68,6 +73,7 @@ typedef union __bcast_un {
 	} v4;
 	uint64_t _vval;
 } BCAST_UN;
+STATIC_ASSERT(sizeof(BCAST_UN) == 8);
 
 typedef union __bcast_srv_ep {
 	struct __endpoint {
@@ -77,12 +83,14 @@ typedef union __bcast_srv_ep {
 	} endpoint;
 	uint64_t _vval;
 } BCAST_SRV_UN;
+STATIC_ASSERT(sizeof(BCAST_SRV_UN) == 8);
 
 // structure for storing coordinates
 typedef struct __point {
 	uint16_t x;
 	uint16_t y;
 } __attribute__((packed)) POINT;
+STATIC_ASSERT(sizeof(POINT) == 4);
 
 // all possible actions that the client may request
 typedef enum __bcsaction {
@@ -101,6 +109,7 @@ typedef enum __bcsaction {
 // request statistics
 	, BCSACTION_REQSTATS // noparams
 } BCSACTION;
+STATIC_ASSERT(sizeof(BCSACTION) == 4);
 
 // direction of the character's movement
 typedef enum __bcsdir {
@@ -114,6 +123,7 @@ typedef enum __bcsdir {
 	, BCSDIR_RIGHT
 	, BCSDIR_DOWN
 } BCSDIRECTION;
+STATIC_ASSERT(sizeof(BCSDIRECTION) == 4);
 
 // possible types of server replies
 typedef enum __bcsreply_type {
@@ -143,7 +153,10 @@ typedef enum __bcsreply_type {
 // emergency (immediate) message
 // экстренное (немедленное) сообщение
 	, BCSREPLT_EMERGENCY
+// выключение сервера
+	, BCSREPLT_SHUTDOWN
 } BCS_REPLY_TYPE;
+STATIC_ASSERT(sizeof(BCS_REPLY_TYPE) == 4);
 
 // possible states of client
 typedef enum __bcsclient_state {
@@ -163,6 +176,7 @@ typedef enum __bcsclient_state {
 // dead
 	, BCSCLST_RESPAWNING
 } BCSCLST;
+STATIC_ASSERT(sizeof(BCSCLST) == 4);
 
 // public information about player, server send it to ever clients with ANNOUNCE
 // публичная информация об игроке, которую сервер отсылает всем в ANNOUNCE:
@@ -170,7 +184,9 @@ typedef struct __bcsclient_info_public {
 	BCSCLST state;
 	POINT position;
 	BCSDIRECTION direction;
+	char _pad[4];
 } BCSCLIENT_PUBLIC;
+STATIC_ASSERT(sizeof(BCSCLIENT_PUBLIC) == 16);
 
 // public information about player, which is sent only on request
 // открытая информация об игроке, которая отсылается только по запросу
@@ -179,29 +195,33 @@ typedef struct __bcsclient_info_public_ext {
 	uint16_t deaths;
 	char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
 } BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
+STATIC_ASSERT(sizeof(BCSCLIENT_PUBLIC_EXT) == 24);
 
 // private information, only server know this
 // закрытая информация, которую о клиенте знает только сервер
 typedef struct __bcsclient_info_private {
-	// ip address and port of client
-	struct sockaddr_in endpoint;
-	// last received packet no
-	uint32_t last_packet_no;
 	// timestamp of last fire event,
 	// to limit fire rate
 	struct timeval time_last_fire;
 	// timestamp of last received datagram, to kick on connection drop
 	struct timeval time_last_dgram;
+	// ip address and port of client
+	struct sockaddr_in endpoint; // 16 bytes
+	// last received packet no
+	uint32_t last_packet_no;
+	char _pad[4];
 } BCSCLIENT_PRIVATE;
+STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 56);
 
 // TODO: extract fields directly into struct?
 // all information about client
 // вся информация о клиенте
 typedef struct {
-	BCSCLIENT_PUBLIC public_info;
-	BCSCLIENT_PUBLIC_EXT public_ext_info;
-	BCSCLIENT_PRIVATE private_info;
+	BCSCLIENT_PUBLIC public_info; // 16
+	BCSCLIENT_PUBLIC_EXT public_ext_info; // 24
+	BCSCLIENT_PRIVATE private_info; // 56
 } BCSCLIENT;
+STATIC_ASSERT(sizeof(BCSCLIENT) == 96);
 
 typedef union {
 	int64_t long_p;
@@ -211,30 +231,33 @@ typedef union {
 	} ints;
 	uint8_t bytes[8];
 } BCSMSGPARAM;
+STATIC_ASSERT(sizeof(BCSMSGPARAM) == 8);
 
 // client's message
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
-// TODO: номер может переполниться, добавить обработку такой ситуации
-	uint32_t packet_no;
 // accurate to microseconds
 	struct timeval time_gen;
+// TODO: номер может переполниться, добавить обработку такой ситуации
+	uint32_t packet_no;
 // action that the client wants to do
 	BCSACTION action;
 // additional params - 8 bytes
 	BCSMSGPARAM un;
 } BCSMSG;
+STATIC_ASSERT(sizeof(BCSMSG) == 32);
 
 // базовая часть сообщения сервера
 typedef struct __bcsmsg_reply {
+// accurate to microseconds
+	struct timeval time_gen;
 // number of packet from incoming message
 // из приходящего сообщения
 	uint32_t packet_no;
-// accurate to microseconds
-	struct timeval time_gen;
 // response type
 	BCS_REPLY_TYPE type;
 } BCSMSGREPLY;
+STATIC_ASSERT(sizeof(BCSMSGREPLY) == 24);
 
 // эта структура - ЧАСТЬ ответа, идёт после заголовка BCSMSGREPLY
 // только в случае type == BCSREPLT_ANNOUNCE
@@ -250,7 +273,9 @@ typedef struct __bcsmsg_announce {
 // вся публичная информация о клиентах
 // самый первый элемeнт [0] всегда тот клиент, который получил сообщение
 //	BCSCLIENT_PUBLIC *public_info;
+	char _pad[2];
 } BCSMSGANNOUNCE;
+STATIC_ASSERT(sizeof(BCSMSGANNOUNCE) == 8);
 
 // structure of the broadcast message from the server
 // структура широковещательного сообщения от сервера
@@ -266,13 +291,16 @@ typedef struct __bcs_beacon {
 // строка с человекочитаемым названием сервера
 	char description[BCSBEACON_DESCRLEN + 1];
 } BCSBEACON;
+STATIC_ASSERT(sizeof(BCSBEACON) == 64);
 
 typedef struct __bcs_bullet {
-    uint16_t creator_id;
-    int16_t x;
-    int16_t y;
+    uint16_t x;
+    uint16_t y;
     BCSDIRECTION direction;
+	uint16_t creator_id;
+	char _pad[6];
 } BCSBULLET;
+STATIC_ASSERT(sizeof(BCSBULLET) == 16);
 
 // unified interface. good to think about it.
 extern bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg);

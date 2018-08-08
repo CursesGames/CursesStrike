@@ -62,3 +62,12 @@ int64_t raw_wgetch(WINDOW *wnd) {
 	}
 	return raw_key;
 }
+
+int mvwputch(WINDOW *wnd, int y, int x, chtype ch) {
+	int w, h;
+	getmaxyx(wnd, h, w);
+	if (y == h - 1 && x == w - 1)
+		return mvwinsch(wnd, y, x, ch);
+	else
+		return mvwaddch(wnd, y, x, ch);
+}

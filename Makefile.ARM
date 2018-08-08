@@ -13,7 +13,7 @@ endif
 override CC := $(CROSS_COMPILE)
 # whole solution flags
 CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter
-CFLAGS += -mabi=aapcs-linux -mfloat-abi=hard -march=armv7 -I$(ROOTDIR)/src-build/arch/arm-hf/include
+CFLAGS += -mabi=aapcs-linux -mfloat-abi=hard -march=armv7 -I$(ROOTDIR)/src-build/arch/arm-hf/include -D TIMEVAL16
 # it is known for me how to link with target glibc, but not ncurses..
 LDFLAGS := -L$(ROOTDIR)/src-build/arch/arm-hf/lib -mfloat-abi=hard
 

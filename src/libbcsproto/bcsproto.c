@@ -17,14 +17,15 @@ ssize_t sendto2(
 	int fd, const void *buf, size_t n,
 	int flags, struct sockaddr *addr, socklen_t addr_len
 ) {
-	int nb_yes = 1;
-	int nb_no = 0;
-	__syscall(ioctl(fd, FIONBIO, &nb_yes, sizeof(nb_yes)));
+	//int nb_yes = 1;
+	//int nb_no = 0;
+	//__syscall(ioctl(fd, FIONBIO, &nb_yes, sizeof(nb_yes)));
 
-	sendto(fd, buf, n, flags, addr, addr_len);
-	lassert(errno == 0 || errno == EWOULDBLOCK);
+	//sendto(fd, buf, n, flags, addr, addr_len);
+	//lassert(errno == 0 || errno == EWOULDBLOCK);
 
-	__syscall(ioctl(fd, FIONBIO, &nb_no, sizeof(nb_no)));
+	//__syscall(ioctl(fd, FIONBIO, &nb_no, sizeof(nb_no)));
+	sendto(fd, buf, n, flags | MSG_DONTWAIT, addr, addr_len);
 	return sendto(fd, buf, n, flags, addr, addr_len);
 }
 

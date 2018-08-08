@@ -13,7 +13,7 @@ endif
 override CC := $(CROSS_COMPILE)
 # whole solution flags
 CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter
-CFLAGS += -march=24kc -mtune=24kc -msoft-float -I$(ROOTDIR)/src-build/arch/mips/include
+CFLAGS += -march=24kc -mtune=24kc -msoft-float -I$(ROOTDIR)/src-build/arch/mips/include -D TIMEVAL16
 # link with target glibc by toolchain
 LDFLAGS := -msoft-float -L$(ROOTDIR)/src-build/arch/mips/lib
 

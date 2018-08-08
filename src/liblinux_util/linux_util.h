@@ -72,7 +72,12 @@
 #define __syscall(x) sysassert((x) != -1)
 
 // assert (compile-time)
-#define STATIC_ASSERT(x) { int __temp_static_assert[(x) ? -1 : 1]; }
+//#define STATIC_ASSERT(x) { int __temp_static_assert[(x) ? -1 : 1]; }
+// https://stackoverflow.com/a/3385694/1543625
+#define COMPILE_TIME_ASSERT4(COND,MSG) typedef char static_assertion_##MSG[(COND)?1:-1]
+#define COMPILE_TIME_ASSERT3(X,L) COMPILE_TIME_ASSERT4(X,at_line_##L)
+#define COMPILE_TIME_ASSERT2(X,L) COMPILE_TIME_ASSERT3(X,L)
+#define STATIC_ASSERT(X)          COMPILE_TIME_ASSERT2(X,__LINE__)
 
 // debug
 extern bool verbose;

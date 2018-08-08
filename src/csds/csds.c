@@ -208,17 +208,16 @@ void send_announces(sigval_t argv) {
 	__syscall(gettimeofday(&now, NULL));
 	for(uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
 		if(state->client[i].public_info.state == BCSCLST_RESPAWNING) {
-			ALOGD("Now: %lu.%lu, spawn at %lu.%lu"
-				, now.tv_sec, now.tv_usec
-				, state->client[i].private_info.time_last_fire.tv_sec
-				, state->client[i].private_info.time_last_fire.tv_usec
-			);
+			//ALOGD("Now: %lu.%lu, spawn at %lu.%lu"
+			//	, now.tv_sec, now.tv_usec
+			//	, state->client[i].private_info.time_last_fire.tv_sec
+			//	, state->client[i].private_info.time_last_fire.tv_usec
+			//);
 			if(timercmp(&now, &state->client[i].private_info.time_last_fire, >=)) {
 				// state is respawning, nothing bad would happen
 				lassert(bcsgameplay_respawn(state, i));
-				logprint("DONE!!!");
+				ALOGD("SPAWN OF %u DONE!!!\n", i);
 			}
-			logprint("\n");
 		}
 	}
 	pthread_mutex_unlock(&state->mutex_self);
@@ -359,9 +358,8 @@ void *state_machine(void *argv) {
 	return NULL;
 }
 
-void dump_state(BCSSERVER_FULL_STATE *state) {
+void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
 	const char dirchar[] = { '<', '^', '>', 'v' };
-	FILE *f = fopen("dump_server.log", "w");
 	pthread_mutex_lock(&state->mutex_self);
 	fprintf(f, "Client slots:\n");
 	for(int i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
@@ -595,6 +593,7 @@ int main(int argc, char **argv) {
 
 	if (argc > 1 && strcmp(argv[1], "daemon") == 0) {
 		ALOGI("Daemonized mode\n");
+		close(STDIN_FILENO);
 		pthread_join(threads[THREAD_UDP_MAIN], NULL);
 	}
 	else {
@@ -608,6 +607,7 @@ int main(int argc, char **argv) {
 		printf("[$] Press Ctrl+D to stop Curses-Strike v0.%d server.\n", BCSPROTO_VERSION);
 
 		while(true) {
+			uint16_t id;
 			if(fgets(buf, PATH_MAX, stdin) == NULL)
 				break;
 			buf[strlen(buf) - 1] = '\0';
@@ -618,9 +618,38 @@ int main(int argc, char **argv) {
 			else if (strcmp(buf, "info") == 0) {
 				log_print_cl_info(&state);
 			}
-			else if(strcmp(buf, "dump") == 0) {
-				dump_state(&state);
+			else if (strcmp(buf, "dump") == 0) {
+				FILE *f = fopen("dump_server.log", "w");
+				dump_state(&state, f);
+				fclose(f);
 				printf("[$] Dump is in 'dump_server.log' for you.\n");
+			}
+			else if (strcmp(buf, "dump here") == 0) {
+				dump_state(&state, stdout);
+				printf("[$] Dump is in front of you.\n");
+			}
+			else if(sscanf(buf, "kick %hu", &id) == 1) {
+				if (id <= BCSSERVER_MAXCLIENTS) {
+					pthread_mutex_lock(&state.mutex_self);
+					if (state.client[id].public_info.state == BCSCLST_FREESLOT) {
+						printf("[$] The slot %u is already free.\n", id);
+					}
+					else {
+						BCSMSGREPLY repl = { .type = htobe32(BCSREPLT_SHUTDOWN) };
+						sendto2(state.sock_u,
+							&repl,
+							sizeof(BCSMSGREPLY),
+							MSG_DONTWAIT,
+							(sockaddr*)&(state.client[id].private_info.endpoint),
+							sizeof(sockaddr_in));
+						memset(&state.client[id], 0, sizeof(BCSCLIENT));
+						printf("[$] Kicked %u for you.\n", id);
+					}
+					pthread_mutex_lock(&state.mutex_self);
+				}
+				else {
+					printf("[$] Sorry you can't!\n");
+				}
 			}
 			else {
 				printf("[$] Unknown command '%.40s'\n", buf);
@@ -632,15 +661,26 @@ int main(int argc, char **argv) {
 	}
 	// TODO: graceful shutdown
 	__syscall(timer_delete(timer_id));
-		for(int i = 0; i < THREAD_SPEC_COUNT; ++i) {
+	for(int i = 0; i < THREAD_SPEC_COUNT; ++i) {
 		//lassert(pthread_kill(threads[i], SIGTERM) == 0);
 		lassert(pthread_cancel(threads[i]) == 0);
 		lassert(pthread_join(threads[i], NULL) == 0);
 		lassert(pthread_attr_destroy(&attr[i]) == 0);
 	}
+	// now we are the only thread, don't use mutexes
 	for(size_t i = 0; i < state.sock_b.size; ++i) {
 		close(((struct bc_data*)(state.sock_b.array[i].ptr))->broadcast_fd);
 		free(state.sock_b.array[i].ptr);
+	}
+	BCSMSGREPLY repl = {
+		.type = htobe32(BCSREPLT_SHUTDOWN)
+	};
+	// уведомить всех игроков
+	for(uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
+		if(state.client[i].public_info.state != BCSCLST_FREESLOT) {
+			sendto2(state.sock_u , &repl, sizeof(BCSMSGREPLY), MSG_DONTWAIT
+				, (sockaddr*)&(state.client[i].private_info.endpoint), sizeof(sockaddr_in));
+		}
 	}
 	close(state.sock_u);
 	close(state.sock_t);

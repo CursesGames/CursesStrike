@@ -233,6 +233,12 @@ void *receiver_func(void *argv) {
 				pfs->stats->_clear = true;
 			break;
 
+			case BCSREPLT_SHUTDOWN:
+				endwin();
+				printf(ANSI_COLOR_RED "Server shutted down" ANSI_CLRST "\n");
+				exit(2);
+			break;
+
 			case BCSREPLT_NONE: 
 				ALOGW("Server sent message of type = %u, do nothing\n", be32toh(repl->type));
 			break;
@@ -359,21 +365,21 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	WINDOW *below = pfs->below;
 	WINDOW *stats = pfs->stats;
 
-	// эта панелька наложится поверх карты
-	sprintf(buf, "Frames: %zu", frames);
 	// стата
 	bool show_stats = pfs->show_stats;
 	pthread_mutex_unlock(&pfs->mutex_self);
 
+	nassert(clearok(stdscr, true));
+	nassert(touchwin(stdscr));
+	nassert(touchwin(mapobj));
 	nassert(werase(stdscr));
 	nassert(werase(mapobj));
 
 	// draw players
 	if(self.state == BCSCLST_PLAYING) {
-		nassert(wmove(mapobj, self.position.y, self.position.x));
-		wattron(mapobj, COLOR_PAIR(CPAIR_PLAYER_SELF));
-		waddch(mapobj, dirchar[self.direction]);
-		wattroff(mapobj, COLOR_PAIR(CPAIR_PLAYER_SELF));
+		nassert(wattron(mapobj, COLOR_PAIR(CPAIR_PLAYER_SELF)));
+		nassert(mvwputch(mapobj, self.position.y, self.position.x, dirchar[self.direction]));
+		nassert(wattroff(mapobj, COLOR_PAIR(CPAIR_PLAYER_SELF)));
 	}
 
 	// lock for all enemies, I don't think this is slow
@@ -381,26 +387,28 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	for(uint16_t i = 0; i < pfs->others.count; i++) {
 		if(i != pfs->others.index_self && pfs->others.array[i].state == BCSCLST_PLAYING) {
 			BCSCLIENT_PUBLIC enemy = pfs->others.array[i];
-			wattron(mapobj, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
-			mvwaddch(mapobj, enemy.position.y, enemy.position.x, dirchar[enemy.direction]);
-			wattroff(mapobj, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
+			nassert(wattron(mapobj, COLOR_PAIR(CPAIR_PLAYER_ENEMY)));
+			nassert(mvwputch(mapobj, enemy.position.y, enemy.position.x, dirchar[enemy.direction]));
+			nassert(wattroff(mapobj, COLOR_PAIR(CPAIR_PLAYER_ENEMY)));
 		}
 	}
 
 	for(uint16_t i = 0; i < pfs->bullets.count; ++i) {
-		char c = ' ';
-		switch(pfs->bullets.array[i].direction) {
-			case BCSDIR_LEFT:
-			case BCSDIR_RIGHT:
-				c = '-';
-			break;
+		if(pfs->bullets.array[i].y < h && pfs->bullets.array[i].x < w) {
+			char c = ' ';
+			switch(pfs->bullets.array[i].direction) {
+				case BCSDIR_LEFT:
+				case BCSDIR_RIGHT:
+					c = '-';
+				break;
 
-			case BCSDIR_UP:
-			case BCSDIR_DOWN:
-				c = '|';
-			break;
+				case BCSDIR_UP:
+				case BCSDIR_DOWN:
+					c = '|';
+				break;
+			}
+			nassert(mvwputch(mapobj, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c));
 		}
-		mvwaddch(mapobj, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
 	}
 
 	// redraw stats if we need it
@@ -409,9 +417,10 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 		nassert(werase(stats));
 		nassert(box(stats, '#', '#'));
 		for(uint16_t i = 0; i < pfs->others.count; ++i) {
-			mvwaddattrfstr(stats, i + 1, 1, BCSPLAYER_NICKLEN, pfs->others.stats[i].nickname, A_NORMAL);
-			mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 1, "%4u", pfs->others.stats[i].frags);
-			mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 6, "%4u", pfs->others.stats[i].deaths);
+			nassert(mvwaddattrfstr(stats, i + 1, 1, BCSPLAYER_NICKLEN
+				, pfs->others.stats[i].nickname, A_NORMAL));
+			nassert(mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 1, "%4u", pfs->others.stats[i].frags));
+			nassert(mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 6, "%4u", pfs->others.stats[i].deaths));
 		}
 	}
 	
@@ -421,7 +430,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// первые два параметра - верхний левый угол pad, с которого берём
 	// следующие четыре - куда на экран проецируем
 	//nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
-	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
+	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, false));
 	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
 	//nassert(pnoutrefresh(mapobj, 0, 0, 0, 0, 0 + h, 0 + w));
 	//nassert(wnoutrefresh(mapobj));
@@ -430,6 +439,10 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 		//pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
 		nassert(copywin(stats, stdscr, 0, 0, 0, 0, STATS_HEIGHT - 1, STATS_WIDTH, false));
 	}
+
+	// эта панелька наложится поверх карты
+	sprintf(buf, "Frames: %zu", frames);
+	nassert(mvwaddstr(below, 0, 1, buf));
 	nassert(overlay(below, stdscr));
 
 	nassert(wnoutrefresh(stdscr));
@@ -511,6 +524,8 @@ int main(int argc, char **argv) {
 
 	char buf[BCSDGRAM_MAX];
 	char addrstr[INET_ADDRSTRLEN];
+
+	lassert(getlogin_r(pfs.self_ext.nickname, BCSPLAYER_NICKLEN) == 0);
 
 	if(argc > 1) {
 		// try to get endpoint from argv[1]
@@ -861,6 +876,10 @@ connect_to:
 	nassert(keypad(stdscr, true));
 	nassert(curs_set(false));
 	nassert(noecho());
+	idcok(stdscr, true);
+	nassert(idlok(stdscr, false));
+	nassert(nonl());
+	nassert(leaveok(stdscr, true));
 	//nassert(nodelay(stdscr, true));
 	//nassert(use_default_colors()); // for transparency?
 
@@ -877,7 +896,7 @@ connect_to:
 	int wnd_ymax, wnd_xmax;
 	getmaxyx(stdscr, wnd_ymax, wnd_xmax);
 
-	pfs.mapobj = newwin(wnd_ymax, wnd_xmax, 0, 0);
+	nassert(pfs.mapobj = newwin(wnd_ymax, wnd_xmax, 0, 0));
 
 	nassert(pfs.below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
 	nassert(wbkgd(pfs.below, COLOR_PAIR(CPAIR_DEFAULT)));
@@ -908,7 +927,7 @@ connect_to:
 	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
 	bool has_pressed = true;
-	int64_t key = ERR;
+	int64_t key;
 	while(true) {
 		/////////////////////////
 		//      ОТРИСОВКА      //
@@ -967,7 +986,8 @@ connect_to:
 			break;
 		}
 		if (has_pressed) {
-			usleep(87000);
+			usleep(75000);
+			// skip key press queue
 			nodelay(stdscr, true);
 			while(true) {
 				if(wgetch(stdscr) == ERR)
