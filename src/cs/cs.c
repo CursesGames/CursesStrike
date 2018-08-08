@@ -38,6 +38,9 @@
 // connect datagrams will be resent this times
 #define BCSCONNECT_RETRIES 10
 
+#define STATS_WIDTH (BCSPLAYER_NICKLEN + 5 + 5 + 2)
+#define STATS_HEIGHT (BCSSERVER_MAXCLIENTS + 2)
+
 // WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
 
@@ -212,6 +215,22 @@ void *receiver_func(void *argv) {
 
 			case BCSREPLT_STATS:
 				ALOGI("Received stats\n");
+				// this is to trick the compiler that's not a declaration (:
+				// ReSharper disable once CppAssignedValueIsNeverUsed
+				// ReSharper disable once CppIdenticalOperandsInBinaryExpression
+				rcvd = rcvd;
+				ann = (BCSMSGANNOUNCE*)(repl + 1);
+				BCSCLIENT_PUBLIC_EXT *plstats = (BCSCLIENT_PUBLIC_EXT*)(ann + 1);
+			
+				pfs->others.index_self = be16toh(ann->index_self);
+				pfs->others.count = be16toh(ann->count);
+
+				memcpy(pfs->others.stats, plstats, sizeof(BCSCLIENT_PUBLIC_EXT) * pfs->others.count);
+				for(uint16_t i = 0; i < pfs->others.count; ++i) {
+					pfs->others.stats[i].frags = be16toh(pfs->others.stats[i].frags);
+					pfs->others.stats[i].deaths = be16toh(pfs->others.stats[i].deaths);
+				}
+				pfs->stats->_clear = true;
 			break;
 
 			case BCSREPLT_NONE: 
@@ -308,17 +327,24 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 				default: ALOGW("Wrong direction for rotation: %u\n", dir); return;
 			}
 		} break;
-		case BCSACTION_REQSTATS: break;
+		case BCSACTION_REQSTATS: {
+			pthread_mutex_lock(&pfs->mutex_self);
+			pfs->show_stats = !pfs->show_stats;
+			pthread_mutex_unlock(&pfs->mutex_self);
+		} break;
 
 		default: ALOGW("Wrong action type %u\n", action); return;
 	}
 
 	// TODO: sendto()
 	bcsproto_new_packet(&msg);
+	pthread_mutex_lock(&pfs->mutex_self);
 	sendto(pfs->sockfd, &msg, sizeof(msg), 0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
+	pthread_mutex_unlock(&pfs->mutex_self);
 }
 
 void draw_window(BCSPLAYER_FULL_STATE *pfs) {
+	char buf[256];
 	pthread_mutex_lock(&pfs->mutex_frame);
     
     int w, h;
@@ -333,12 +359,13 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	BCSCLIENT_PUBLIC self = pfs->self;
 	WINDOW *mappad = pfs->mappad;
 	WINDOW *below = pfs->below;
-	pthread_mutex_unlock(&pfs->mutex_self);
+	WINDOW *stats = pfs->stats;
 
-	// copy a part of pad
-	// первые два параметра - верхний левый угол pad, с которого берём
-	// следующие четыре - куда на экран проецируем
-	nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+	// эта панелька наложится поверх карты
+	sprintf(buf, "Frames: %zu", frames);
+	// стата
+	bool show_stats = pfs->show_stats;
+	pthread_mutex_unlock(&pfs->mutex_self);
 
 	// draw players
 	if(self.state == BCSCLST_PLAYING) {
@@ -374,19 +401,30 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 		}
 		mvwaddch(stdscr, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
 	}
+
+	// redraw stats if we need it
+	if(stats->_clear) {
+		stats->_clear = false;
+		nassert(werase(stats));
+		nassert(box(stats, ' ', ' '));
+		for(uint16_t i = 0; i < pfs->others.count; ++i) {
+			mvwaddattrfstr(stats, i + 1, 1, BCSPLAYER_NICKLEN, pfs->others.stats[i].nickname, A_NORMAL);
+			mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 1, "%4u", pfs->others.stats[i].frags);
+			mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 6, "%4u", pfs->others.stats[i].deaths);
+		}
+	}
 	
 	pthread_mutex_unlock(&pfs->mutex_self);
-	nassert(wnoutrefresh(stdscr));
 
 	// copy a part of pad
 	// первые два параметра - верхний левый угол pad, с которого берём
 	// следующие четыре - куда на экран проецируем
-    //nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
-
-	// эта панелька наложится поверх карты
-	nassert(werase(below));
-	mvwprintw(below, 0, 1, "Frames: %zu", frames);
+	nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+	if(show_stats) {
+		pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
+	}
 	nassert(wnoutrefresh(below));
+	nassert(wnoutrefresh(stdscr));
 
 	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
@@ -450,6 +488,7 @@ int main(int argc, char **argv) {
 		  }
 		, .mappad = NULL
 		, .below = NULL
+		, .stats = NULL
 		, .frames = 0
 		, .endpoint = {
 			  .sin_addr = INADDR_ANY // addr is in host byte order
@@ -457,6 +496,8 @@ int main(int argc, char **argv) {
 			, .sin_family = AF_INET
 		  }
 		, .sockfd = -1 // erroneous socket
+		, .redraw = true
+		, .show_stats = false
 	};
 
 	char buf[BCSDGRAM_MAX];
@@ -490,6 +531,7 @@ int main(int argc, char **argv) {
 			// DONE: select random IP if count > 1, up to RAND_MAX, e.g. 32767
 			pfs.endpoint.sin_addr = *(struct in_addr*)(sv_host->h_addr_list[rand() % ip_count]);
 		}
+		pfs.endpoint.sin_addr.s_addr = be32toh(pfs.endpoint.sin_addr.s_addr);
 		goto connect_to;
 	}
 	// узнать все пригодные интерфейсы
@@ -659,9 +701,11 @@ connect_to:
 	VERBOSE ALOGV("Sending CONNECT... ");
 	// есть смысл сначала создать структуру, а только потом проштамповать
 	// зачем? чтобы метка времени создания была ближе к времени отправки
-	BCSMSG msg = {
-		  .action = htobe32(BCSACTION_CONNECT)
-	};
+	BCSMSG *msg = alloca(sizeof(BCSMSG) + BCSPLAYER_NICKLEN + 1);
+	msg->action = htobe32(BCSACTION_CONNECT);
+	msg->un.ints.int_lo = htobe32(BCSPROTO_VERSION);
+	msg->un.ints.int_hi = htobe32(strlen(pfs.self_ext.nickname));
+	strncpy((char*)(msg + 1), pfs.self_ext.nickname, BCSPLAYER_NICKLEN);
 
 	ssize_t rcvd;
 	struct sockaddr_in sin_src;
@@ -674,7 +718,7 @@ connect_to:
 			goto connect_leave;
 		}
 
-		bcsproto_new_packet(&msg);
+		bcsproto_new_packet(msg);
 		lassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
 			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
 		rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
@@ -696,9 +740,9 @@ connect_to:
 		}
 
 		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
-		if(repl->packet_no != msg.packet_no) {
+		if(repl->packet_no != msg->packet_no) {
 			ALOGD("Packet no mismatch (sent %u, got %u), skipping\n"
-				, be32toh(msg.packet_no), be32toh(repl->packet_no));
+				, be32toh(msg->packet_no), be32toh(repl->packet_no));
 			continue;
 		}
 
@@ -737,12 +781,11 @@ connect_to:
 
 	close(sock_tcp);
 
-	msg.action = htobe32(BCSACTION_CONNECT2);
-	bcsproto_new_packet(&msg);
+	msg->action = htobe32(BCSACTION_CONNECT2);
 	VERBOSE ALOGV("Sending CONNECT2... ");
 
 	while(true) {
-		bcsproto_new_packet(&msg);
+		bcsproto_new_packet(msg);
 		lassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
 			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
 		rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
@@ -768,9 +811,9 @@ connect_to:
 		}
 
 		BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
-		if(repl->packet_no != msg.packet_no) {
+		if(repl->packet_no != msg->packet_no) {
 			ALOGD("Packet no mismatch (sent %u, got %u), skipping\n"
-				, be32toh(msg.packet_no), be32toh(repl->packet_no));
+				, be32toh(msg->packet_no), be32toh(repl->packet_no));
 			continue;
 		}
 
@@ -796,6 +839,7 @@ connect_to:
 	nassert(keypad(stdscr, true));
 	nassert(curs_set(false));
 	nassert(noecho());
+	nassert(nodelay(stdscr, true));
 	//nassert(use_default_colors()); // for transparency?
 
 	nassert(start_color());
@@ -814,6 +858,9 @@ connect_to:
 	nassert(pfs.below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
 	nassert(wbkgd(pfs.below, COLOR_PAIR(CPAIR_DEFAULT)));
 	pfs.below->_clear = true;
+
+	nassert(pfs.stats = newpad(STATS_HEIGHT, STATS_WIDTH));
+	nassert(wbkgd(pfs.stats, COLOR_PAIR(CPAIR_CELL_WALL)));
 
 	init_map(&pfs.mappad, &pfs.map);
 
@@ -836,16 +883,21 @@ connect_to:
 	pthread_t receiver_thread;
 	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
+	int64_t key = ERR;
 	while(true) {
 		/////////////////////////
 		//      ОТРИСОВКА      //
 		/////////////////////////
-		draw_window(&pfs);
+		if(key != ERR) {
+			draw_window(&pfs);
+		}
 
 		/////////////////////////
 		//         ВВОД        //
 		/////////////////////////
-		int64_t key = raw_wgetch(stdscr);
+		bool has_pressed = true;
+		nassert(nodelay(stdscr, true));
+		key = raw_wgetch(stdscr);
 		switch(key) {
 			/////////////////////////
 			//       ОБРАБОТКА     //
@@ -855,6 +907,10 @@ connect_to:
 			case KEY_F(10): // F10
 				do_action(&pfs, BCSACTION_DISCONNECT, BCSDIR_UNDEF);
 				goto loop_leave;
+
+			case RAW_KEY_TAB:
+							do_action(&pfs, BCSACTION_REQSTATS, BCSDIR_UNDEF); 
+																			 break;
 
 			case 'a':
 			case 'A':
@@ -880,7 +936,13 @@ connect_to:
 
 			case ' ':       do_action(&pfs, BCSACTION_FIRE,   BCSDIR_UNDEF); break;
 
-			default: break;
+			case ERR:
+			default:
+				has_pressed = false;
+			break;
+		}
+		if(has_pressed) {
+			usleep(100000);
 		}
 	}
 

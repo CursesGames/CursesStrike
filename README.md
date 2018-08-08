@@ -23,3 +23,5 @@ How to build:
 Feel free to send issues and pull requests.
 
 Copyleft (c) Linux Flowers Team, 2018
+
+![Linux Flowers](LinuxFlowers.png)

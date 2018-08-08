@@ -24,6 +24,7 @@ typedef struct {
 		uint16_t count;
 		uint16_t index_self;
 		BCSCLIENT_PUBLIC array[BCSSERVER_MAXCLIENTS];
+		BCSCLIENT_PUBLIC_EXT stats[BCSSERVER_MAXCLIENTS];
 	} others;
 	pthread_mutex_t mutex_self; // this struct data exclusive access
 	pthread_mutex_t mutex_frame; // ncurses view exclusive access
@@ -34,11 +35,14 @@ typedef struct {
 	BCSMAP map_overlay;
 	WINDOW *mappad;
 	WINDOW *below;
+	WINDOW *stats;
 	struct {
 		uint16_t count;
 		BCSBULLET *array;
 	} bullets;
 	size_t frames;
+	bool redraw;
+	bool show_stats;
 } BCSPLAYER_FULL_STATE;
 
 // структура состояния сервера = состояние клиентов на сервере
