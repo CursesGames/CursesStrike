@@ -71,7 +71,7 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BC
                 state->client[i].public_info.position.y = y; // y-coordinate
                 state->client[i].public_info.position.x = x; // x-coordinate
                 num = i;
-                nick = (char *)(cl_msg + sizeof(BCSMSG)); //nickname
+                nick = (char *)(cl_msg + 1); //nickname
                 uint32_t name_lenth = be32toh(cl_msg->un.ints.int_hi); //nickname lenth
                 if (name_lenth > BCSPLAYER_NICKLEN) {
                     strncpy(state->client[i].public_ext_info.nickname, nick, BCSPLAYER_NICKLEN);
@@ -157,4 +157,5 @@ void log_print_cl_info(BCSSERVER_FULL_STATE *state) {
     }
     pthread_mutex_unlock(&state->mutex_self);
 }
+
 
