@@ -41,8 +41,7 @@ uint16_t return_clients_size(BCSSERVER_FULL_STATE *state) {
 int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg) {
     struct timeval tv;
     char *nick;
-    int i, j, k;
-    int x, y;
+    int i;
     int num = -1;
 
     pthread_mutex_lock(&state->mutex_self);
