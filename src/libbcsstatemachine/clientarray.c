@@ -1,18 +1,21 @@
 #include <stdint.h>
+#include <stddef.h>
 #include <string.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
 #include "clientarray.h"
 #include "../libbcsstatemachine/bcsstatemachine.h"
 #include "../liblinux_util/linux_util.h"
 
-//Не включено в мьютекс, потому что я вызываю эту функцию внутри мьютекса
+// Not in mutex because it's often called in other functions that are already in mutex
+// !!! When call this function separately take it in mutex
 bool isFree(BCSSERVER_FULL_STATE *state, uint16_t x, uint16_t y){
     int i;
 
     for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
-        if((state->client[i].public_info.state != BCSCLST_FREESLOT)
+        if ((state->client[i].public_info.state != BCSCLST_FREESLOT)
             && (state->client[i].public_info.state != BCSCLST_RESPAWNING)
             && (state->client[i].public_info.position.y == y)
             && (state->client[i].public_info.position.x == x)){
@@ -35,15 +38,17 @@ uint16_t return_clients_size(BCSSERVER_FULL_STATE *state) {
 }
 
 // Put client data into array
-int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) {
+int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg) {
     struct timeval tv;
+    char *nick;
     int i, j, k;
     int x, y;
     int num = -1, flag = -1;
 
     pthread_mutex_lock(&state->mutex_self);
     // init coordinates
-    //return из вложенного цикла не сделаешь, поэтому flag
+    // we need flag in order not to enter the cycle without using return
+    // (because we use mutex)
     for (j = 0; j < state->map.height; j++) {
         for (k = 0; k < state->map.width; k++) {
             if((flag == -1)
@@ -55,9 +60,10 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) {
             }
         }
     }
-    if(flag == 0){
-        for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
-            if((state->client[i].public_info.state) == BCSCLST_FREESLOT){
+    if ((flag == 0)
+        && (be32toh(cl_msg->un.ints.int_lo) == BCSPROTO_VERSION)) {
+        for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
+            if ((state->client[i].public_info.state) == BCSCLST_FREESLOT){
                 state->client[i].private_info.endpoint = *addr_client; // client endpoint
                 __syscall(gettimeofday(&(state->client[i].private_info.time_last_dgram), NULL)); 
                 state->client[i].public_info.state = BCSCLST_CONNECTING; // init state = wait for map
@@ -65,6 +71,15 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) {
                 state->client[i].public_info.position.y = y; // y-coordinate
                 state->client[i].public_info.position.x = x; // x-coordinate
                 num = i;
+                nick = (char *)(cl_msg + sizeof(BCSMSG)); //nickname
+                uint32_t name_lenth = be32toh(cl_msg->un.ints.int_hi); //nickname lenth
+                if (name_lenth > BCSPLAYER_NICKLEN) {
+                    strncpy(state->client[i].public_ext_info.nickname, nick, BCSPLAYER_NICKLEN);
+                    state->client[i].public_ext_info.nickname[BCSPLAYER_NICKLEN] = '\0';
+                }
+                else {
+                    strncpy(state->client[i].public_ext_info.nickname, nick, name_lenth);
+                }
                 break;
             }
         }
@@ -95,14 +110,6 @@ int search_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) 
 }
 
 // Remove client from array
-// Str1ker, 06.08.2018:
-// TODO:
-// WARNING:
-// ERROR:
-// эта функция не производит никаких проверок (??)
-// поэтому клиент, не зарегистрированный на сервере, может послать DISCONNECT
-// и развалить сервер?!?!
-// срочно починить!!!
 int delete_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) {
     int num;
 
@@ -117,6 +124,7 @@ int delete_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client)
     return 0;
 }
 
+// Print information about current state of array client
 void log_print_cl_info(BCSSERVER_FULL_STATE *state) {
     int i;
 

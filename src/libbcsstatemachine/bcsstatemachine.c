@@ -25,22 +25,23 @@ bool bcsstatemachine_process_request(
     }
 
     // TODO: добавить больше цветочков!
-    uint16_t player_count;
     int i;
     BCSMSGREPLY reply; //reply to client
+    BCSBULLET *bullet;
     reply.packet_no = msg->packet_no; // packet to send number
     int id = search_client(state, src); // client id in array
+    uint16_t x, y;
 
     pthread_mutex_lock(&state->mutex_self);
     int u_fd = state->sock_u; // copy descriptor from state
     pthread_mutex_unlock(&state->mutex_self);
 
     switch(be32toh(msg->action)){
-        case BCSACTION_CONNECT: // client sent CONNECT;
+        case BCSACTION_CONNECT: // client sent CONNECT; 
             if(search_client(state, src) == -1){//ONLY IF THERE IS NO SUCH CLIENT IN ARRAY
                 ALOGW("received CONNECT from client\n");
                 // Add client to array
-                switch(add_client(state, src)){
+                switch(add_client(state, src, msg)){
                     case -1: // clients limit is settled
                         reply.type = htobe32(BCSREPLT_NACK);
                         break;
@@ -48,9 +49,7 @@ bool bcsstatemachine_process_request(
                     default:
                         pthread_mutex_lock(&state->mutex_self);
                         state->player_count++;
-                        state->client[id].public_info.state = BCSCLST_CONNECTING;
                         pthread_mutex_unlock(&state->mutex_self);
-                        ALOGW("state to CONNECTING\n");
                         reply.type = htobe32(BCSREPLT_MAP);
                         log_print_cl_info(state);
                 }
@@ -90,60 +89,74 @@ bool bcsstatemachine_process_request(
         case BCSACTION_MOVE:
             ALOGW("received MOVE from client\n");
             pthread_mutex_lock(&state->mutex_self);
-            if(state->client[id].public_info.state == BCSCLST_PLAYING){
-                uint16_t x = state->client[id].public_info.position.x;
-                uint16_t y = state->client[id].public_info.position.y;
-                switch(be32toh(msg->un.ints.int_lo)) {
-                    case BCSDIR_LEFT:
-                        if((x != 0)
-                            && ((state->map.map_primitives[y * state->map.width + (x - 1)]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x - 1, y) == true)){
-                            state->client[id].public_info.position.x--;
-                        }
-                        break;
+            switch(state->client[id].public_info.state) {
+                case BCSCLST_PLAYING:
+                    x = state->client[id].public_info.position.x;
+                    y = state->client[id].public_info.position.y;
+                    switch(be32toh(msg->un.ints.int_lo)) {
+                        case BCSDIR_LEFT:
+                            if((x != 0)
+                                && ((state->map.map_primitives[y * state->map.width + (x - 1)]) == PUNIT_OPEN_SPACE)
+                                && (isFree(state, x - 1, y) == true)){
+                                state->client[id].public_info.position.x--;
+                            }
+                            break;
                         
-                    case BCSDIR_RIGHT:
-                        if((x != (state->map.width - 1))
-                            && ((state->map.map_primitives[y * state->map.width + (x + 1)]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x + 1, y) == true)){
-                            state->client[id].public_info.position.x++;
-                        }
-                        break;
+                        case BCSDIR_RIGHT:
+                            if((x != (state->map.width - 1))
+                                && ((state->map.map_primitives[y * state->map.width + (x + 1)]) == PUNIT_OPEN_SPACE)
+                                && (isFree(state, x + 1, y) == true)){
+                                state->client[id].public_info.position.x++;
+                            }
+                            break;
 
-                    case BCSDIR_UP:
-                        if((y != 0)
-                            && ((state->map.map_primitives[(y - 1) * state->map.width + x]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x, y - 1) == true)){
-                            state->client[id].public_info.position.y--;
-                        }
-                        break;
+                        case BCSDIR_UP:
+                            if((y != 0)
+                                && ((state->map.map_primitives[(y - 1) * state->map.width + x]) == PUNIT_OPEN_SPACE)
+                                && (isFree(state, x, y - 1) == true)){
+                                state->client[id].public_info.position.y--;
+                            }
+                            break;
 
-                    case BCSDIR_DOWN:
-                        if((y != (state->map.height - 1))
-                            && ((state->map.map_primitives[(y + 1)* state->map.width + x]) == PUNIT_OPEN_SPACE)
-                            && (isFree(state, x, y + 1) == true)){
-                            state->client[id].public_info.position.y++;
-                        }
-                        break;
+                        case BCSDIR_DOWN:
+                            if((y != (state->map.height - 1))
+                                && ((state->map.map_primitives[(y + 1)* state->map.width + x]) == PUNIT_OPEN_SPACE)
+                                && (isFree(state, x, y + 1) == true)){
+                                state->client[id].public_info.position.y++;
+                            }
+                            break;
+                    }
+
+                    default:
+                        reply.type = htobe32(BCSREPLT_NACK);
+                        __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                        0, (sockaddr*)src, sizeof(sockaddr_in)));
                 }
-            }
             pthread_mutex_unlock(&state->mutex_self);
             break;
 
         case BCSACTION_FIRE:
             ALOGW("received FIRE from client\n");
             pthread_mutex_lock(&state->mutex_self);
-            if(state->client[id].public_info.state == BCSCLST_CONNECTED){
-                state->client[id].public_info.state = BCSCLST_PLAYING;
-            }
-            else if(state->client[id].public_info.state == BCSCLST_PLAYING){
-                BCSBULLET *bullet =  malloc(sizeof(BCSBULLET));
-                bullet->creator_id = id;
-                bullet->x = state->client[id].public_info.position.x;
-                bullet->y = state->client[id].public_info.position.y;
-                bullet->direction = state->client[id].public_info.direction;
-                LIST_VALTYPE val = { .ptr = bullet };
-                linkedlist_push_back(&state->bullets, val);
+            switch(state->client[id].public_info.state){
+                case BCSCLST_CONNECTED:
+                    state->client[id].public_info.state = BCSCLST_PLAYING;
+                    break;
+
+                case BCSCLST_PLAYING:
+                    bullet =  malloc(sizeof(BCSBULLET));
+                    bullet->creator_id = id;
+                    bullet->x = state->client[id].public_info.position.x;
+                    bullet->y = state->client[id].public_info.position.y;
+                    bullet->direction = state->client[id].public_info.direction;
+                    LIST_VALTYPE val = { .ptr = bullet };
+                    linkedlist_push_back(&state->bullets, val);
+                    break;
+
+                default:
+                    reply.type = htobe32(BCSREPLT_NACK);
+                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                    0, (sockaddr*)src, sizeof(sockaddr_in)));
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
@@ -151,45 +164,63 @@ bool bcsstatemachine_process_request(
         case BCSACTION_ROTATE:
             ALOGW("received ROTATE from client\n");
             pthread_mutex_lock(&state->mutex_self);
-            switch(be32toh(msg->un.ints.int_lo)) {
-                case BCSDIR_RIGHT:
-                    state->client[id].public_info.direction = (state->client[id].public_info.direction + 1) % 4;
+            switch(state->client[id].public_info.state){
+                case BCSCLST_PLAYING:
+                    switch(be32toh(msg->un.ints.int_lo)) {
+                        case BCSDIR_RIGHT:
+                            state->client[id].public_info.direction = (state->client[id].public_info.direction + 1) % 4;
+                            break;
+
+                        case BCSDIR_LEFT:
+                            state->client[id].public_info.direction = (state->client[id].public_info.direction + 3) % 4;
+                            break;
+                    }
                     break;
 
-                case BCSDIR_LEFT:
-                    state->client[id].public_info.direction = (state->client[id].public_info.direction + 3) % 4;
-                    break;
+                default:
+                    reply.type = htobe32(BCSREPLT_NACK);
+                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                    0, (sockaddr*)src, sizeof(sockaddr_in)));
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
 
         case BCSACTION_REQSTATS:
             ALOGW("received REQSTATS from client\n");
-            player_count = return_clients_size(state); //htobe
+            uint16_t player_count = return_clients_size(state);
+            uint16_t bullets_count = state->bullets.count;
 
             BCSMSGREPLY *stats_to_send = alloca(
-              sizeof(BCSMSGREPLY)
+              sizeof(BCSMSGREPLY) 
+            + sizeof(BCSMSGANNOUNCE) 
             + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count
             );
 
             stats_to_send->type = htobe32(BCSREPLT_STATS);
             //__syscall(gettimeofday(&(stats_to_send->time_gen), NULL));
 
-            BCSCLIENT_PUBLIC_EXT *array = (BCSCLIENT_PUBLIC_EXT*)(stats_to_send + 1);
+            BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(stats_to_send + 1);
+            ann->count = htobe16(player_count);
+            ann->count_bullets = htobe16(bullets_count);
+
+            size_t annlen =   sizeof(BCSMSGREPLY)
+                            + sizeof(BCSMSGANNOUNCE) 
+                            + sizeof(BCSCLIENT_PUBLIC) * player_count;
+
+            BCSCLIENT_PUBLIC_EXT *array = (BCSCLIENT_PUBLIC_EXT*)(ann + 1);
             pthread_mutex_lock(&state->mutex_self);
                for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
                    if(state->client[i].public_info.state != BCSCLST_FREESLOT){
                         array->frags = htobe16(state->client[i].public_ext_info.frags);
                         array->deaths = htobe16(state->client[i].public_ext_info.deaths);
-                        strncpy(array->nickname, state->client[i].public_ext_info.nickname, BCSPLAYER_NICKLEN);
+                        strncpy(array->nickname, state->client[i].public_ext_info.nickname, BCSPLAYER_NICKLEN + 1);
                         array++;
                     }
                 }
             pthread_mutex_unlock(&state->mutex_self);
-                __syscall(sendto(u_fd, stats_to_send, 
-                          sizeof(BCSMSGREPLY) + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count,
-                          0, (sockaddr*)src, sizeof(sockaddr_in)));
+            __syscall(sendto(u_fd, stats_to_send, annlen, 0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
+
         //default:
             
     }
