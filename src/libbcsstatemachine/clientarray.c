@@ -43,7 +43,7 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BC
     char *nick;
     int i, j, k;
     int x, y;
-    int num = -1, flag = -1;
+    int num = -1;
 
     pthread_mutex_lock(&state->mutex_self);
     if (be32toh(cl_msg->un.ints.int_lo) == BCSPROTO_VERSION) {
