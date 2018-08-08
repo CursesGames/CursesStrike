@@ -282,7 +282,7 @@ typedef struct{
 	uint64_t n;
 	uint64_t k;
 	uint64_t count_actions;
-	__time_t t;
+	time_t t;
 } DOS_ARGV;
 
 void dos(DOS_ARGV* argv){
@@ -313,7 +313,7 @@ void dos(DOS_ARGV* argv){
 }
 
 
-void test_dos(BCSPLAYER_FULL_STATE* pfs, uint64_t count_clients, uint64_t count_actions, uint64_t num_threads, __time_t sec){
+void test_dos(BCSPLAYER_FULL_STATE* pfs, uint64_t count_clients, uint64_t count_actions, uint64_t num_threads, time_t sec){
 	fprintf(log_file, "Start DoS\n");
 	int* udp_zombie_sockets = malloc(count_clients * sizeof(int));
 	if(!udp_zombie_sockets)

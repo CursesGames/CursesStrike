@@ -10,3 +10,7 @@ libbcsstatemachine: liblinux_util libbcsproto libbcsmap libbcsgameplay
 libvector: 
 libbcsgameplay: libbcsproto libbcsmap liblinux_util
 liblinkedlist: 
+
+# autotests by Alexander Makarov (NRshka, mrOwl)
+test_sender: liblinux_util libbcsmap libbcsproto libvector
+test_imitator: liblinux_util libbcsmap libbcsproto libvector

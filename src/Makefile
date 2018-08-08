@@ -12,9 +12,12 @@ export
 
 # https://superuser.com/a/593404
 SUBDIRS := $(shell find . -mindepth 1 -maxdepth 1 -type d  \( ! -iname ".*" \) | sed 's|^\./||g')
+SUBDIRS_TEST := $(shell find . -mindepth 1 -maxdepth 1 -type d  \( ! -iname ".*" \) | sed 's|^\./||g' | grep --color=never test_)
+SUBDIRS_PROJECT := $(shell find . -mindepth 1 -maxdepth 1 -type d  \( ! -name "test_*" \) | sed 's|^\./||g')
 .PHONY: $(SUBDIRS)
 
-projects: subdirs $(SUBDIRS)
+projects: subdirs $(SUBDIRS_PROJECT)
+tests: subdirs $(SUBDIRS_TEST)
 # это позволяет собрать только одну подпапку, например: make libncurses_util
 # также здесь прописываем зависимости проектов
 # пока что не удалось от них избавиться, но это меньшее из зол

@@ -7,6 +7,6 @@ LOCAL_HEADERS := $(wildcard *.h)
 LOCAL_SOURCES := $(wildcard *.c)
 LOCAL_STATIC_DEPENDENCIES := liblinux_util.a libbcsmap.a libbcsproto.a libvector.a
 LOCAL_SHARED_DEPENCIES :=
-LOCAL_MODULE := sender.exe
+LOCAL_MODULE := test_sender.exe
 
 include $(BUILD_EXECUTABLE)
