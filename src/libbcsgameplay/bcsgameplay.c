@@ -214,37 +214,66 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
 
     srand(time(NULL));
 
-    size_t spawn_coordinate;
+    LIST_VALTYPE *lv;
+    LINKED_LIST_ENTRY *lle = NULL;
+    size_t spawn_coordinate_y;
+    size_t spawn_coordinate_x;
     uint16_t height = state->map.height;
     uint16_t width = state->map.width;
 
     int start_area;
     int end_area;
 
-    int offset = (CHECK_AREA_SIZE/2) * CHECK_AREA_SIZE + (CHECK_AREA_SIZE/2);
+    // int offset = (CHECK_AREA_SIZE/2) * CHECK_AREA_SIZE + (CHECK_AREA_SIZE/2);
 
-    int player_count_in_area = 0;
+    int danger_lvl = 0;
     
     size_t map_size = height * width;
     uint8_t* map_overlay_copy = state->map_overlay.map_primitives;
 
     while (true) {
-        spawn_coordinate = rand() % map_size;  // выбираем рандомное место спауна
-        
-        start_area = spawn_coordinate - offset;  // считаем начало области проверки
-        end_area = spawn_coordinate + offset;  // конец области проверки
-        
-        if (map_overlay_copy[spawn_coordinate] != PUNIT_OPEN_SPACE) {  // проверяем
-            continue;                                                  // можно ли появиться
-        }                                                              // в данной координате
+        spawn_coordinate_y = rand() % height;                                   // выбираем рандомное место спауна
+        spawn_coordinate_x = rand() % width;
 
-        for (int i = start_area; i < end_area; ++i) {  // поиск других игроков в области
-            if (map_overlay_copy[i] < BCSSERVER_MAXCLIENTS) {       // потенциальной угрозы
-                ++player_count_in_area;
+        start_area = (spawn_coordinate_y - CHECK_AREA_SIZE) * width + 
+                     (spawn_coordinate_x - CHECK_AREA_SIZE);                    // считаем начало области проверки
+        end_area = (spawn_coordinate_y + CHECK_AREA_SIZE) * width + 
+                     (spawn_coordinate_x + CHECK_AREA_SIZE);                    // конец области проверки
+        
+        if (map_overlay_copy[spawn_coordinate_y * width + spawn_coordinate_x] 
+                                                        != PUNIT_OPEN_SPACE) {  // проверяем
+            continue;                                                           // можно ли появиться
+        }                                                                       // в данной координате
+
+        for (int i = start_area; i < end_area; ++i) {                           // поиск других игроков в области
+            if (map_overlay_copy[i] < BCSSERVER_MAXCLIENTS) {                   // потенциальной угрозы
+                ++danger_lvl;
             }
         }
 
-        if (player_count_in_area > 1) {  // обнаружен игрок помимо нас самих
+        while((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
+            BCSBULLET *bullet = (BCSBULLET*)(lv->ptr);
+
+            if (bullet->y == spawn_coordinate_y) {                              // bullet flying on line of player
+                if (bullet->x < spawn_coordinate_x && 
+                    bullet->direction == BCSDIR_RIGHT) {                        // bullet flying to player from leftside
+                    ++danger_lvl;
+                } else if (bullet->x > spawn_coordinate_x && 
+                           bullet->direction == BCSDIR_LEFT) {                  // bullet flying to player from rightside
+                    ++danger_lvl;
+                }
+            } else if (bullet->x == spawn_coordinate_x) {                       // bullet flying on line of player
+                if (bullet->y > spawn_coordinate_y && 
+                    bullet->direction == BCSDIR_UP) {                           // bullet flying to player from upper
+                    ++danger_lvl;
+                } else if (bullet->y < spawn_coordinate_y &&                    // bullet flying to player from down
+                           bullet->direction == BCSDIR_DOWN) {
+                    ++danger_lvl;
+                }
+            }
+        }
+
+        if (danger_lvl > 1) {            // обнаружен игрок помимо нас самих
             continue;                    // область опасна для возрождения        
         }                                // ищем новую
 
@@ -252,8 +281,8 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
     }
 
     state->client[id].public_info.state = BCSCLST_PLAYING;
-    state->client[id].public_info.position.x = spawn_coordinate % width;
-    state->client[id].public_info.position.y = spawn_coordinate/width;
+    state->client[id].public_info.position.x = spawn_coordinate_x;
+    state->client[id].public_info.position.y = spawn_coordinate_y;
 
     return true;
 }
