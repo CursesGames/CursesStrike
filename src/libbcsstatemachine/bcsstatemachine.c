@@ -19,8 +19,10 @@ bool bcsstatemachine_process_request(
 	, BCSMSG *msg
 	, ssize_t msglen
 ) {
+
+    int id = search_client(state, src); // return -1 if it's new client
     //there is no client with such endpoint in array and this client did not send CONNECT or REQSTATS
-    if((search_client(state, src) == -1) 
+    if((id == -1) 
         && (be32toh(msg->action) != BCSACTION_CONNECT)
         && (be32toh(msg->action) != BCSACTION_REQSTATS)){
         return false;
@@ -31,12 +33,14 @@ bool bcsstatemachine_process_request(
     BCSMSGREPLY reply; //reply to client
     BCSBULLET *bullet;
     reply.packet_no = msg->packet_no; // packet to send number
-    int id = search_client(state, src); // client id in array
     uint16_t x, y;
     bool flag = true;
 
     pthread_mutex_lock(&state->mutex_self);
-    int u_fd = state->sock_u; // copy descriptor from state
+    int u_fd = state->sock_u; // copy descriptor from state 
+    if(id != -1){
+        __syscall(gettimeofday(&state->client[id].private_info.time_last_dgram, NULL));
+    }
     pthread_mutex_unlock(&state->mutex_self);
 
     switch(be32toh(msg->action)){
