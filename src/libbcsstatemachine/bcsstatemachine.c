@@ -167,7 +167,8 @@ bool bcsstatemachine_process_request(
             pthread_mutex_lock(&state->mutex_self);
             switch(state->client[id].public_info.state){
                 case BCSCLST_CONNECTED:
-                    bcsgameplay_respawn(state, id);
+                    state->client[id].public_info.state = BCSCLST_RESPAWNING;
+                    //bcsgameplay_respawn(state, id);
                     break;
 
                 case BCSCLST_PLAYING:
