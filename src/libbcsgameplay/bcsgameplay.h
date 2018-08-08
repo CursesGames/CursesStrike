@@ -8,7 +8,7 @@
 
 #define BCSBULLET_SPEED 3
 #define CHECK_AREA_SIZE 5  // must be odd
-#define RESPAWN_TIMER 3
+#define RESPAWN_TIMER 2
 
 extern bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, 
                                 int steps);

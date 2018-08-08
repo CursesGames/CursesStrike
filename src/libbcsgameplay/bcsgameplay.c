@@ -229,7 +229,13 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
         return false;
     }
 
-    srand(time(NULL));
+    struct timeval seed;
+    
+    if (gettimeofday(&seed, NULL) == -1) {
+        perror("random failed");
+    }
+    
+    srand(seed.tv_usec);
 
     LIST_VALTYPE *lv;
     LINKED_LIST_ENTRY *lle = NULL;
@@ -240,7 +246,6 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
     uint16_t offset_y;
     uint16_t offset_x;
 
-    uint8_t i = 0;
     uint16_t start_area;
     uint16_t end_area;
 
@@ -302,10 +307,6 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
                     ++danger_lvl;
                 }
             }
-        }
-
-        if (i > 100) {                                                          // looking for a long time, unlucky =(
-                break;
         }
 
         if (danger_lvl > 1) {                                                   // At least one threat nearby
