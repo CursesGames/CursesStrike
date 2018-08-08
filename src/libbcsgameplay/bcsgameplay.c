@@ -17,7 +17,7 @@ void bcsgameplay_map_overlay_create(BCSSERVER_FULL_STATE *state)
     uint16_t client_x;
     uint16_t client_y;
     uint16_t size = height * width;
-    uint8_t* map_overlay_copy = state->map_overlay.map_primitives;  // copy ptr to map_overlay
+    uint8_t* map_overlay_copy = state->map_overlay.map_primitives;              // copy ptr to map_overlay
 
     memcpy(state->map_overlay.map_primitives, state->map.map_primitives, 
             height * width);
@@ -26,7 +26,7 @@ void bcsgameplay_map_overlay_create(BCSSERVER_FULL_STATE *state)
         if (state->client[i].public_info.state == BCSCLST_PLAYING) {
             client_x = state->client[i].public_info.position.x;
             client_y = state->client[i].public_info.position.y;
-            map_overlay_copy[width*client_y + client_x] = i;  // размещаем номер "врага"
+            map_overlay_copy[width*client_y + client_x] = i;                    // marking enemy
         }
     }    
 }
@@ -38,7 +38,7 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
 
     uint16_t rifleman = bullet->creator_id;
 
-    uint16_t player_count = state->player_count;  // number of players in server
+    uint16_t player_count = state->player_count;                                // number of players in server
     uint16_t height = state->map.height;
     uint16_t width = state->map.width;
     uint16_t bullet_x = bullet->x;
@@ -49,7 +49,7 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
     memcpy(map_overlay_copy, state->map_overlay.map_primitives, height * width);
 
     switch (bullet->direction) {
-        case BCSDIR_LEFT:   // y - constant, x can move at negative direction 
+        case BCSDIR_LEFT:                                                       // y - constant, x can move at negative direction 
             line_size = width * bullet_y;
             for (int i = 0; i < steps; ++i) {
                 if (bullet_x == 0) {
@@ -66,15 +66,17 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                     case PUNIT_BOX:
                         return false;
                     default:
-                        if (tmp_primitive == rifleman) {  // don't kill yourself!!!
+                        if (tmp_primitive == rifleman) {                        // don't kill yourself!!!
                             break;
                         }
                         ++(state->client[tmp_primitive].public_ext_info.deaths);
                         state->client[tmp_primitive].public_info.state 
                                                         = BCSCLST_RESPAWNING;
-                        lassert(gettimeofday(&(state->client[tmp_primitive]
+                        if(gettimeofday(&state->client[tmp_primitive]
                                                  .private_info
-                                                 .time_last_fire), NULL));
+                                                 .time_last_fire, NULL) == -1){
+                            perror("gettimeofday in LEFT");
+                        }
                         state->client[tmp_primitive]
                               .private_info
                               .time_last_fire
@@ -86,7 +88,7 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 }
             }
             break;
-        case BCSDIR_RIGHT:  // y - constant, x can move at positive direction
+        case BCSDIR_RIGHT:                                                      // y - constant, x can move at positive direction
             line_size = width * bullet_y;
             for (int i = 0; i < steps; ++i) {
                 if (bullet_x == width) {
@@ -106,15 +108,17 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                     case PUNIT_BOX:
                         return false;
                     default:
-                        if (tmp_primitive == rifleman) {  // don't kill yourself!!!
+                        if (tmp_primitive == rifleman) {                        // don't kill yourself!!!
                             break;
                         }
                         ++(state->client[tmp_primitive].public_ext_info.deaths);
                         state->client[tmp_primitive].public_info.state 
                                                         = BCSCLST_RESPAWNING;
-                        lassert(gettimeofday(&(state->client[tmp_primitive]
+                        if(gettimeofday(&state->client[tmp_primitive]
                                                  .private_info
-                                                 .time_last_fire), NULL));
+                                                 .time_last_fire, NULL) == -1){
+                            perror("gettimeofday in RIGHT");
+                        }
                         state->client[tmp_primitive]
                               .private_info
                               .time_last_fire
@@ -124,7 +128,7 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 }
             }
             break;
-        case BCSDIR_UP:     // x - constant, y can move at negative direction
+        case BCSDIR_UP:                                                         // x - constant, y can move at negative direction
             for (int i = 0; i < steps; ++i) {
                 if (bullet_y == 0) {
                     return false;
@@ -140,15 +144,17 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                     case PUNIT_BOX:
                         return false;
                     default:
-                        if (tmp_primitive == rifleman) {  // don't kill yourself!!!
+                        if (tmp_primitive == rifleman) {                        // don't kill yourself!!!
                             break;
                         }
                         ++(state->client[tmp_primitive].public_ext_info.deaths);
                         state->client[tmp_primitive].public_info.state 
                                                         = BCSCLST_RESPAWNING;
-                        lassert(gettimeofday(&(state->client[tmp_primitive]
+                        if(gettimeofday(&state->client[tmp_primitive]
                                                  .private_info
-                                                 .time_last_fire), NULL));
+                                                 .time_last_fire, NULL) == -1){
+                            perror("gettimeofday in RIGHT");
+                        }
                         state->client[tmp_primitive]
                               .private_info
                               .time_last_fire
@@ -158,7 +164,7 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 }
             }
             break;
-        case BCSDIR_DOWN:   // x - constant, y can move at positive direction
+        case BCSDIR_DOWN:                                                       // x - constant, y can move at positive direction
             for (int i = 0; i < steps; ++i) {
                 if (bullet_y == height - 1) {
                     return false;
@@ -174,21 +180,33 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                     case PUNIT_BOX:
                         return false;
                     default:
-                        if (tmp_primitive == rifleman) {  // don't kill yourself!!!
+                        if (tmp_primitive == rifleman) {                        // don't kill yourself!!!
                             break;
                         }
 
                         ++(state->client[tmp_primitive].public_ext_info.deaths);
                         state->client[tmp_primitive].public_info.state 
                                                         = BCSCLST_RESPAWNING;
-                        lassert(gettimeofday(&(state->client[tmp_primitive]
+                        if(gettimeofday(&state->client[tmp_primitive]
                                                  .private_info
-                                                 .time_last_fire), NULL));
+                                                 .time_last_fire, NULL) == -1){
+                            perror("gettimeofday in RIGHT");
+                        }
+                        // (TODO) fixed respawn time
+                        // ALOGI("Death time %ld\n", state->client[tmp_primitive]
+                        //       .private_info
+                        //       .time_last_fire
+                        //       .tv_sec);
+
                         state->client[tmp_primitive]
                               .private_info
                               .time_last_fire
                               .tv_sec += RESPAWN_TIMER;
                         ++(state->client[rifleman].public_ext_info.frags);
+                        // ALOGI("Respawn after %ld\n", state->client[tmp_primitive]
+                        //       .private_info
+                        //       .time_last_fire
+                        //       .tv_sec);
                         return false;
                 }
             }
@@ -196,8 +214,7 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
         default: 
             break;
     }
-
-    // rewrite x and y coordinates bullet
+                                                                                // rewrite x and y coordinates bullet
     bullet->x = bullet_x;
     bullet->y = bullet_y;
 
@@ -216,37 +233,51 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
 
     LIST_VALTYPE *lv;
     LINKED_LIST_ENTRY *lle = NULL;
-    size_t spawn_coordinate_y;
-    size_t spawn_coordinate_x;
+    uint16_t spawn_coordinate_y;
+    uint16_t spawn_coordinate_x;
     uint16_t height = state->map.height;
     uint16_t width = state->map.width;
+    uint16_t offset_y;
+    uint16_t offset_x;
 
-    int start_area;
-    int end_area;
+    uint8_t i = 0;
+    uint16_t start_area;
+    uint16_t end_area;
 
-    // int offset = (CHECK_AREA_SIZE/2) * CHECK_AREA_SIZE + (CHECK_AREA_SIZE/2);
-
-    int danger_lvl = 0;
+    uint8_t danger_lvl = 0;
     
     size_t map_size = height * width;
     uint8_t* map_overlay_copy = state->map_overlay.map_primitives;
 
     while (true) {
-        spawn_coordinate_y = rand() % height;                                   // выбираем рандомное место спауна
+        spawn_coordinate_y = rand() % height;                                   // choose random spawn place
         spawn_coordinate_x = rand() % width;
 
+        if (spawn_coordinate_x < CHECK_AREA_SIZE) {
+            offset_x = spawn_coordinate_x % CHECK_AREA_SIZE;
+        }
+        if (spawn_coordinate_y < CHECK_AREA_SIZE) {
+            offset_y = spawn_coordinate_y % CHECK_AREA_SIZE;
+        }
+        if (spawn_coordinate_x > (width - CHECK_AREA_SIZE)) {
+            offset_x = spawn_coordinate_x % CHECK_AREA_SIZE;
+        }
+        if (spawn_coordinate_y > height) {
+            offset_y = spawn_coordinate_y % CHECK_AREA_SIZE;
+        }
+
         start_area = (spawn_coordinate_y - CHECK_AREA_SIZE) * width + 
-                     (spawn_coordinate_x - CHECK_AREA_SIZE);                    // считаем начало области проверки
+                     (spawn_coordinate_x - CHECK_AREA_SIZE);                    // start check area
         end_area = (spawn_coordinate_y + CHECK_AREA_SIZE) * width + 
-                     (spawn_coordinate_x + CHECK_AREA_SIZE);                    // конец области проверки
+                     (spawn_coordinate_x + CHECK_AREA_SIZE);                    // end check area
         
         if (map_overlay_copy[spawn_coordinate_y * width + spawn_coordinate_x] 
-                                                        != PUNIT_OPEN_SPACE) {  // проверяем
-            continue;                                                           // можно ли появиться
-        }                                                                       // в данной координате
+                                                        != PUNIT_OPEN_SPACE) {  // check
+            continue;                                                           // can respawn possibility
+        }                                                                       // at this coordinate
 
-        for (int i = start_area; i < end_area; ++i) {                           // поиск других игроков в области
-            if (map_overlay_copy[i] < BCSSERVER_MAXCLIENTS) {                   // потенциальной угрозы
+        for (uint16_t i = start_area; i < end_area; ++i) {                      // search enemy at area
+            if (map_overlay_copy[i] < BCSSERVER_MAXCLIENTS) {                   // potential danger
                 ++danger_lvl;
             }
         }
@@ -273,9 +304,13 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
             }
         }
 
-        if (danger_lvl > 1) {            // обнаружен игрок помимо нас самих
-            continue;                    // область опасна для возрождения        
-        }                                // ищем новую
+        if (i > 100) {                                                          // looking for a long time, unlucky =(
+                break;
+        }
+
+        if (danger_lvl > 1) {                                                   // At least one threat nearby
+            continue;                                                           // look up new      
+        }                                                                       
 
         break;
     }
