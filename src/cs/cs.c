@@ -406,7 +406,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	if(stats->_clear) {
 		stats->_clear = false;
 		nassert(werase(stats));
-		nassert(box(stats, ' ', ' '));
+		nassert(box(stats, '#', '#'));
 		for(uint16_t i = 0; i < pfs->others.count; ++i) {
 			mvwaddattrfstr(stats, i + 1, 1, BCSPLAYER_NICKLEN, pfs->others.stats[i].nickname, A_NORMAL);
 			mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 1, "%4u", pfs->others.stats[i].frags);
@@ -423,8 +423,8 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	if(show_stats) {
 		pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
 	}
-	nassert(wnoutrefresh(below));
 	nassert(wnoutrefresh(stdscr));
+	nassert(wnoutrefresh(below));
 
 	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
@@ -491,8 +491,8 @@ int main(int argc, char **argv) {
 		, .stats = NULL
 		, .frames = 0
 		, .endpoint = {
-			  .sin_addr = INADDR_ANY // addr is in host byte order
-			, .sin_port = htobe16(BCSSERVER_DEFAULT_PORT) // while port is always in BE
+			  .sin_addr = INADDR_ANY // addr is in hE
+			, .sin_port = BCSSERVER_DEFAULT_PORT // port is always in hE
 			, .sin_family = AF_INET
 		  }
 		, .sockfd = -1 // erroneous socket
@@ -513,7 +513,7 @@ int main(int argc, char **argv) {
 				ALOGE("Incorrect port number\n");
 				return EXIT_FAILURE;
 			}
-			pfs.endpoint.sin_port = htobe16(pfs.endpoint.sin_port);
+			//pfs.endpoint.sin_port = pfs.endpoint.sin_port;
 			*ptr = '\0'; // WARNING: now we patch argv
 		}
 
@@ -531,7 +531,7 @@ int main(int argc, char **argv) {
 			// DONE: select random IP if count > 1, up to RAND_MAX, e.g. 32767
 			pfs.endpoint.sin_addr = *(struct in_addr*)(sv_host->h_addr_list[rand() % ip_count]);
 		}
-		pfs.endpoint.sin_addr.s_addr = be32toh(pfs.endpoint.sin_addr.s_addr);
+		//pfs.endpoint.sin_addr.s_addr = be32toh(pfs.endpoint.sin_addr.s_addr);
 		goto connect_to;
 	}
 	// узнать все пригодные интерфейсы
@@ -620,7 +620,7 @@ start_bcast_scan:
 			BCAST_SRV_UN srv_new = { 
 				.endpoint = { 
 					  .addr = srv_sin.sin_addr.s_addr
-					, .port = beacon->port
+					, .port = be16toh(beacon->port)
 					, .zero = 0
 				}
 			};
@@ -636,7 +636,7 @@ start_bcast_scan:
 			lassert(vector_push_back(&servers, vval));
 			lassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
 			printf("\t%s:%hu\t%.*s - %u\n"
-				, addrstr, be16toh(beacon->port), BCSBEACON_DESCRLEN, beacon->description
+				, addrstr, srv_new.endpoint.port, BCSBEACON_DESCRLEN, beacon->description
 				, number + 1
 			);
 			++number;
@@ -686,8 +686,11 @@ next_epevent:
 	pfs.endpoint.sin_port = srv->endpoint.port;
 
 connect_to:
-	lassert(inet_ntop(AF_INET, &(srv->endpoint.addr), addrstr, INET_ADDRSTRLEN) != NULL);
-	ALOGI("Connecting to %s:%hu\n", addrstr, be16toh(srv->endpoint.port));
+	lassert(inet_ntop(AF_INET, &(pfs.endpoint.sin_addr), addrstr, INET_ADDRSTRLEN) != NULL);
+	ALOGI("Connecting to %s:%hu\n", addrstr, pfs.endpoint.sin_port);
+
+	// inverse port once
+	pfs.endpoint.sin_port = htobe16(pfs.endpoint.sin_port);
 
 	VERBOSE ALOGV("Creating UDP socket... ");
 	__syscall(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
@@ -698,14 +701,24 @@ connect_to:
 	__syscall(setsockopt(pfs.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
 	VERBOSE logprint("OK.\n");
 
-	VERBOSE ALOGV("Sending CONNECT... ");
 	// есть смысл сначала создать структуру, а только потом проштамповать
 	// зачем? чтобы метка времени создания была ближе к времени отправки
-	BCSMSG *msg = alloca(sizeof(BCSMSG) + BCSPLAYER_NICKLEN + 1);
+	ssize_t nickname_len = strlen(pfs.self_ext.nickname);
+	ALOGV("Nickname length = %zd\n", nickname_len);
+	ssize_t connect_len = sizeof(BCSMSG) + nickname_len + 1;
+	ALOGV("Connect length = %zd\n", connect_len);
+	
+	BCSMSG *msg = alloca(connect_len);
 	msg->action = htobe32(BCSACTION_CONNECT);
 	msg->un.ints.int_lo = htobe32(BCSPROTO_VERSION);
-	msg->un.ints.int_hi = htobe32(strlen(pfs.self_ext.nickname));
-	strncpy((char*)(msg + 1), pfs.self_ext.nickname, BCSPLAYER_NICKLEN);
+	msg->un.ints.int_hi = htobe32(nickname_len);
+	strcpy((char*)(msg + 1), pfs.self_ext.nickname);
+
+	FILE *f1 = fopen("connect.log", "wb");
+	fwrite(msg, connect_len, 1, f1);
+	fclose(f1);
+
+	VERBOSE ALOGV("Sending CONNECT... ");
 
 	ssize_t rcvd;
 	struct sockaddr_in sin_src;
@@ -719,8 +732,8 @@ connect_to:
 		}
 
 		bcsproto_new_packet(msg);
-		lassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
-			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
+		lassert(sendto(pfs.sockfd, msg, connect_len, 0
+			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == connect_len);
 		rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
 		if(rcvd == -1) {
 			if (errno == EAGAIN) {
@@ -786,8 +799,8 @@ connect_to:
 
 	while(true) {
 		bcsproto_new_packet(msg);
-		lassert(sendto(pfs.sockfd, &msg, sizeof(msg), 0
-			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(msg));
+		lassert(sendto(pfs.sockfd, msg, sizeof(BCSMSG), 0
+			, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(BCSMSG));
 		rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
 		if(rcvd == -1) {
 			if (errno == EAGAIN) {
@@ -883,20 +896,21 @@ connect_to:
 	pthread_t receiver_thread;
 	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
+	bool has_pressed = true;
 	int64_t key = ERR;
 	while(true) {
 		/////////////////////////
 		//      ОТРИСОВКА      //
 		/////////////////////////
-		if(key != ERR) {
+		//if(key != ERR) {
+		if(has_pressed) {
 			draw_window(&pfs);
 		}
 
 		/////////////////////////
 		//         ВВОД        //
 		/////////////////////////
-		bool has_pressed = true;
-		nassert(nodelay(stdscr, true));
+		//nassert(nodelay(stdscr, true));
 		key = raw_wgetch(stdscr);
 		switch(key) {
 			/////////////////////////
@@ -941,9 +955,12 @@ connect_to:
 				has_pressed = false;
 			break;
 		}
-		if(has_pressed) {
+		if (has_pressed) {
 			usleep(100000);
 		}
+		//else {
+		//	usleep(1000);
+		//}
 	}
 
 loop_leave:

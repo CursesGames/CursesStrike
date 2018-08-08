@@ -28,7 +28,7 @@
 #include "../libbcsstatemachine/bcsstatemachine.h"
 #include "../liblinkedlist/linkedlist.h"
 #include "../libbcsgameplay/bcsgameplay.h"
-#include "../libbcsstatemachine/clientarray.h"
+#include "../libbcsstatemachine/clientarray.h" // TODO: remove dependency
 
 // listen backlog size of TCP socket
 #define LISTEN_NUM 16
@@ -188,7 +188,7 @@ void send_announces(sigval_t argv) {
 	BCSBULLET *array_bullet = (BCSBULLET*)(array + player_count);
 
 	LIST_VALTYPE *lv;
-	LINKED_LIST_ENTRY *lle;
+	LINKED_LIST_ENTRY *lle = NULL;
 	int n = 0;
 	while((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
 		array_bullet[n] = *((BCSBULLET*)lv->ptr);
@@ -200,6 +200,16 @@ void send_announces(sigval_t argv) {
 		++n;
 	}
 	// респануть игроков
+	struct timeval now;
+	__syscall(gettimeofday(&now, NULL));
+	for(uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
+		if(state->client[i].public_info.state == BCSCLST_RESPAWNING
+			&& timercmp(&now, &state->client[i].private_info.time_last_fire, <=)
+		) {
+			// state is respawning, nothing bad would happen
+			lassert(bcsgameplay_respawn(state, i));
+		}
+	}
 	pthread_mutex_unlock(&state->mutex_self);
 
 	repl->type = htobe32(BCSREPLT_ANNOUNCE);
