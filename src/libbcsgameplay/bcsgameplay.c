@@ -204,3 +204,57 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
     return true;
 
 }
+
+bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
+{
+
+    if ((state->client[id].public_info.state) != BCSCLST_RESPAWNING) {
+        return false;
+    }
+
+    srand(time(NULL));
+
+    size_t spawn_coordinate;
+    uint16_t height = state->map.height;
+    uint16_t width = state->map.width;
+
+    int start_area;
+    int end_area;
+
+    int offset = (CHECK_AREA_SIZE/2) * CHECK_AREA_SIZE + (CHECK_AREA_SIZE/2);
+
+    int player_count_in_area = 0;
+    
+    size_t map_size = height * width;
+    uint8_t* map_overlay_copy = state->map_overlay.map_primitives;
+
+    while (true) {
+        spawn_coordinate = rand() % map_size;  // выбираем рандомное место спауна
+        
+        start_area = spawn_coordinate - offset;  // считаем начало области проверки
+        end_area = spawn_coordinate + offset;  // конец области проверки
+        
+        if (map_overlay_copy[spawn_coordinate] != PUNIT_OPEN_SPACE) {  // проверяем
+            continue;                                                  // можно ли появиться
+        }                                                              // в данной координате
+
+        for (int i = start_area; i < end_area; ++i) {  // поиск других игроков в области
+            if (map_overlay_copy[i] < BCSSERVER_MAXCLIENTS) {       // потенциальной угрозы
+                ++player_count_in_area;
+            }
+        }
+
+        if (player_count_in_area > 1) {  // обнаружен игрок помимо нас самих
+            continue;                    // область опасна для возрождения        
+        }                                // ищем новую
+
+        break;
+    }
+
+    state->client[id].public_info.state = BCSCLST_PLAYING;
+    state->client[id].public_info.position.x = spawn_coordinate % width;
+    state->client[id].public_info.position.y = spawn_coordinate/width;
+
+    return true;
+}
+
