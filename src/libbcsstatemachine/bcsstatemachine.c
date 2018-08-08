@@ -172,18 +172,18 @@ bool bcsstatemachine_process_request(
             switch(state->client[id].public_info.state){
                 case BCSCLST_CONNECTED:
                     state->client[id].public_info.state = BCSCLST_RESPAWNING;
-                    //__syscall(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
-                    bcsgameplay_respawn(state, id);
+                    __syscall(gettimeofday(&(state->client[id].private_info.time_last_fire), NULL));
+                    //bcsgameplay_respawn(state, id);
                     break;
 
                 case BCSCLST_PLAYING:
-                    bullet =  malloc(sizeof(BCSBULLET));
+                    bullet = malloc(sizeof(BCSBULLET));
                     bullet->creator_id = id;
                     bullet->x = state->client[id].public_info.position.x;
                     bullet->y = state->client[id].public_info.position.y;
                     bullet->direction = state->client[id].public_info.direction;
                     LIST_VALTYPE val = { .ptr = bullet };
-                    linkedlist_push_back(&state->bullets, val);
+                    lassert(linkedlist_push_back(&state->bullets, val));
                     break;
 
                 default:

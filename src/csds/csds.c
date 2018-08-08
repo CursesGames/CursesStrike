@@ -63,6 +63,10 @@ void *send_broadcast(void *argv) {
 	struct ifaddrs *ifaddr_head = ifaddr;
 
     while(ifaddr != NULL) {
+		if(ifaddr->ifa_addr != NULL && ifaddr->ifa_addr->sa_family == AF_INET) {
+			ALOGI("Server is accessible on %s:%hu\n"
+				, inet_ntoa(((sockaddr_in*)ifaddr->ifa_addr)->sin_addr), (uint16_t)BCSSERVER_DEFAULT_PORT);
+		}
         if(
 		       ifaddr->ifa_addr == NULL
             || ifaddr->ifa_addr->sa_family != AF_INET
@@ -203,11 +207,18 @@ void send_announces(sigval_t argv) {
 	struct timeval now;
 	__syscall(gettimeofday(&now, NULL));
 	for(uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
-		if(state->client[i].public_info.state == BCSCLST_RESPAWNING
-			&& timercmp(&now, &state->client[i].private_info.time_last_fire, <=)
-		) {
-			// state is respawning, nothing bad would happen
-			lassert(bcsgameplay_respawn(state, i));
+		if(state->client[i].public_info.state == BCSCLST_RESPAWNING) {
+			ALOGD("Now: %lu.%lu, spawn at %lu.%lu"
+				, now.tv_sec, now.tv_usec
+				, state->client[i].private_info.time_last_fire.tv_sec
+				, state->client[i].private_info.time_last_fire.tv_usec
+			);
+			if(timercmp(&now, &state->client[i].private_info.time_last_fire, >=)) {
+				// state is respawning, nothing bad would happen
+				lassert(bcsgameplay_respawn(state, i));
+				logprint("DONE!!!");
+			}
+			logprint("\n");
 		}
 	}
 	pthread_mutex_unlock(&state->mutex_self);

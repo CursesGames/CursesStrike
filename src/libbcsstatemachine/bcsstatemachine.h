@@ -34,6 +34,7 @@ typedef struct {
 	BCSMAP map;
 	BCSMAP map_overlay;
 	WINDOW *mappad;
+	WINDOW *mapobj;
 	WINDOW *below;
 	WINDOW *stats;
 	struct {

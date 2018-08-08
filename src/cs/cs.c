@@ -350,14 +350,12 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
     int w, h;
 	getmaxyx(stdscr, h, w);
 
-	nassert(werase(stdscr));
-	nassert(wnoutrefresh(stdscr));
-
 	// блокируем этот мьютекс только в случае чтения изменяющихся данных или записи изменений
 	pthread_mutex_lock(&pfs->mutex_self);
 	size_t frames = ++pfs->frames;
 	BCSCLIENT_PUBLIC self = pfs->self;
 	WINDOW *mappad = pfs->mappad;
+	WINDOW *mapobj = pfs->mapobj;
 	WINDOW *below = pfs->below;
 	WINDOW *stats = pfs->stats;
 
@@ -367,12 +365,15 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	bool show_stats = pfs->show_stats;
 	pthread_mutex_unlock(&pfs->mutex_self);
 
+	nassert(werase(stdscr));
+	nassert(werase(mapobj));
+
 	// draw players
 	if(self.state == BCSCLST_PLAYING) {
-		nassert(wmove(stdscr, self.position.y, self.position.x));
-		wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
-		waddch(stdscr, dirchar[self.direction]);
-		wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_SELF));
+		nassert(wmove(mapobj, self.position.y, self.position.x));
+		wattron(mapobj, COLOR_PAIR(CPAIR_PLAYER_SELF));
+		waddch(mapobj, dirchar[self.direction]);
+		wattroff(mapobj, COLOR_PAIR(CPAIR_PLAYER_SELF));
 	}
 
 	// lock for all enemies, I don't think this is slow
@@ -380,9 +381,9 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	for(uint16_t i = 0; i < pfs->others.count; i++) {
 		if(i != pfs->others.index_self && pfs->others.array[i].state == BCSCLST_PLAYING) {
 			BCSCLIENT_PUBLIC enemy = pfs->others.array[i];
-			wattron(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
-			mvwaddch(stdscr, enemy.position.y, enemy.position.x, dirchar[enemy.direction]);
-			wattroff(stdscr, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
+			wattron(mapobj, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
+			mvwaddch(mapobj, enemy.position.y, enemy.position.x, dirchar[enemy.direction]);
+			wattroff(mapobj, COLOR_PAIR(CPAIR_PLAYER_ENEMY));
 		}
 	}
 
@@ -399,7 +400,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 				c = '|';
 			break;
 		}
-		mvwaddch(stdscr, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
+		mvwaddch(mapobj, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c);
 	}
 
 	// redraw stats if we need it
@@ -419,12 +420,19 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// copy a part of pad
 	// первые два параметра - верхний левый угол pad, с которого берём
 	// следующие четыре - куда на экран проецируем
-	nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+	//nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
+	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
+	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
+	//nassert(pnoutrefresh(mapobj, 0, 0, 0, 0, 0 + h, 0 + w));
+	//nassert(wnoutrefresh(mapobj));
+
 	if(show_stats) {
-		pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
+		//pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
+		nassert(copywin(stats, stdscr, 0, 0, 0, 0, STATS_HEIGHT - 1, STATS_WIDTH, false));
 	}
+	nassert(overlay(below, stdscr));
+
 	nassert(wnoutrefresh(stdscr));
-	nassert(wnoutrefresh(below));
 
 	// всё готово, можно слать клиенту пачку данных
 	nassert(doupdate());
@@ -487,6 +495,7 @@ int main(int argc, char **argv) {
 			, .count = 0
 		  }
 		, .mappad = NULL
+		, .mapobj = NULL
 		, .below = NULL
 		, .stats = NULL
 		, .frames = 0
@@ -861,12 +870,14 @@ connect_to:
 	nassert(init_pair(CPAIR_CELL_CRATE, COLOR_BLACK, COLOR_YELLOW)); // crate
 	nassert(init_pair(CPAIR_CELL_WATER, COLOR_WHITE, COLOR_BLUE)); // wall
 
-	nassert(init_pair(CPAIR_PLAYER_SELF, COLOR_WHITE, COLOR_GREEN)); // me
+	nassert(init_pair(CPAIR_PLAYER_SELF, COLOR_BLACK, COLOR_GREEN)); // me
 	nassert(init_pair(CPAIR_PLAYER_ENEMY, COLOR_WHITE, COLOR_RED)); // opposite
 
 	// 2D geometry
 	int wnd_ymax, wnd_xmax;
 	getmaxyx(stdscr, wnd_ymax, wnd_xmax);
+
+	pfs.mapobj = newwin(wnd_ymax, wnd_xmax, 0, 0);
 
 	nassert(pfs.below = newwin(1, wnd_xmax / 2, wnd_ymax - 2, 1));
 	nassert(wbkgd(pfs.below, COLOR_PAIR(CPAIR_DEFAULT)));
@@ -956,11 +967,14 @@ connect_to:
 			break;
 		}
 		if (has_pressed) {
-			usleep(100000);
+			usleep(87000);
+			nodelay(stdscr, true);
+			while(true) {
+				if(wgetch(stdscr) == ERR)
+					break;
+			}
+			nodelay(stdscr, false);
 		}
-		//else {
-		//	usleep(1000);
-		//}
 	}
 
 loop_leave:
