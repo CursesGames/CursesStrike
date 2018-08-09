@@ -374,8 +374,8 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	pthread_mutex_unlock(&pfs->mutex_self);
 
 	//nassert(clearok(stdscr, true));
-	//nassert(touchwin(stdscr));
-	//nassert(touchwin(mapobj));
+	nassert(touchwin(stdscr));
+	nassert(touchwin(mapobj));
 	nassert(werase(stdscr));
 	nassert(werase(mapobj));
 
