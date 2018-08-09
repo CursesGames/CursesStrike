@@ -7,10 +7,10 @@ include $(ROOTDIR)/src-build/default-config.mk
 # If you want to move to another architecture, you might have to recompile ncurses from sources!
 # cross-compiler
 ifeq ($(strip $(CROSS_COMPILE)),)
-CROSS_COMPILE := /home/striker/bin/cross-compile/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-gcc
+CROSS_COMPILE := /home/striker/bin/cross-compile/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
 endif
 
-override CC := $(CROSS_COMPILE)
+override CC := $(CROSS_COMPILE)gcc
 # whole solution flags
 CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter
 CFLAGS += -mabi=aapcs-linux -mfloat-abi=hard -march=armv7 -I$(ROOTDIR)/src-build/arch/arm-hf/include -D TIMEVAL16
@@ -44,14 +44,15 @@ distclean:
 # To build one project, for ex. `cs` in debug configuration, type `CONFIG=debug make cs`
 config:
 ifeq ($(strip $(CONFIG)),)
-CONFIG := release
+CONFIG := debug
 endif
 
-ifeq ($(CONFIG),release)
+ifeq ($(strip $(CONFIG)),release)
 CFLAGS += -O3 -D NDEBUG=1 -D RELEASE=1
+LDFLAGS += -s
 endif
 
-ifeq ($(CONFIG),debug)
+ifeq ($(strip $(CONFIG)),debug)
 CFLAGS += -O0 -ggdb -ffunction-sections -D DEBUG=1
 CFLAGS += -D VALGRIND_SUCKS
 endif

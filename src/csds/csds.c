@@ -448,7 +448,6 @@ void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
 		}
 		fprintf(f, "\n");
 	}
-	fclose(f);
 	pthread_mutex_unlock(&state->mutex_self);
 }
 
@@ -493,19 +492,24 @@ int main(int argc, char **argv) {
 	linkedlist_init(&state.bullets);
     
     // map loading
-	char mapfile_name[PATH_MAX] = "res/propeller.bcsmap";
-	while(true) {
-		if(bcsmap_load(mapfile_name, &(state.map)))
-			break;
-		ALOGW("Could not load map from file '%s'\n", mapfile_name);
-		printf("Enter filename of map in .bcsmap format: ");
-		fflush(stdout); // for sure
-		if(fgets(mapfile_name, PATH_MAX, stdin) == NULL) {
-			ALOGE("Fatal error: fgets() failed\n");
-			exit(EXIT_FAILURE);
+	char mapfile_name[PATH_MAX] = "propeller.bcsmap";
+	if(    !bcsmap_load("res/propeller.bcsmap", &(state.map)) 
+		&& !bcsmap_load("propeller.bcsmap", &(state.map))
+	) {
+		while(true) {
+			ALOGW("Could not load map from file '%s'\n", mapfile_name);
+			printf("Enter filename of map in .bcsmap format: ");
+			fflush(stdout); // for sure
+			if(fgets(mapfile_name, PATH_MAX, stdin) == NULL) {
+				ALOGE("Fatal error: fgets() failed\n");
+				exit(EXIT_FAILURE);
+			}
+			mapfile_name[strlen(mapfile_name) - 1] = '\0';
+			if(bcsmap_load(mapfile_name, &(state.map)))
+				break;
 		}
-		mapfile_name[strlen(mapfile_name) - 1] = '\0';
 	}
+	ALOGI("Map '%s' loaded.\n", mapfile_name);
 
 	// allocate memory for overlay
 	state.map_overlay.width = state.map.width;
@@ -629,7 +633,7 @@ int main(int argc, char **argv) {
 				printf("[$] Dump is in front of you.\n");
 			}
 			else if(sscanf(buf, "kick %hu", &id) == 1) {
-				if (id <= BCSSERVER_MAXCLIENTS) {
+				if (id < BCSSERVER_MAXCLIENTS) {
 					pthread_mutex_lock(&state.mutex_self);
 					if (state.client[id].public_info.state == BCSCLST_FREESLOT) {
 						printf("[$] The slot %u is already free.\n", id);
@@ -638,6 +642,7 @@ int main(int argc, char **argv) {
 						BCSMSGREPLY repl = { .type = htobe32(BCSREPLT_SHUTDOWN) };
 						sendto2(state.sock_u, &repl, sizeof(BCSMSGREPLY), MSG_DONTWAIT
 							,(sockaddr*)&(state.client[id].private_info.endpoint), sizeof(sockaddr_in));
+						--(state.player_count);
 						memset(&state.client[id], 0, sizeof(BCSCLIENT));
 						printf("[$] Kicked %u for you.\n", id);
 					}

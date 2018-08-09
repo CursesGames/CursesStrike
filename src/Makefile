@@ -29,7 +29,7 @@ $(SUBDIRS): subdirs
 
 # warning: bash-specific script...
 last-config:
-	@(echo [i] Compiler is $(CC), linker is $(LD), configuration is $(CONFIG) && \
+	@((echo -n "[i] Compiler is $(CC), linker is $(LD), configuration is " && tput setaf 1 && echo $(CONFIG) && tput sgr0) && \
 	echo [i] CFLAGS are: $(CFLAGS) && \
 	echo [i] LDFLAGS are: $(LDFLAGS)) > "$(ROOTDIR)/make.config.now"
 	@if [[ $$SILENCE_IS_GOLDEN -ne 1 ]] ; then cat "$(ROOTDIR)/make.config.now" ; fi
@@ -47,7 +47,7 @@ clean:
 	-rm -rf "$(LIBDIR)"
 	-rm -rf "$(OBJDIR)"
 	-rm -f "$(ROOTDIR)/make.config.prev"
-	
+
 targets := $(addprefix clean-, $(SUBDIRS))
 
 $(targets):

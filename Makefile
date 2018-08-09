@@ -41,19 +41,20 @@ distclean:
 # TODO: apply these changes to cross-platform Makefiles
 config:
 ifeq ($(strip $(CONFIG)),)
-CONFIG := release
-endif
-
-ifeq ($(CONFIG),release)
-CFLAGS += -O3 -g -D NDEBUG=1 -D RELEASE=1
-endif
-
-# dirty fix for visual studio
-ifeq ($(CONFIG),Debug)
 CONFIG := debug
 endif
 
-ifeq ($(CONFIG),debug)
+ifeq ($(strip $(CONFIG)),release)
+CFLAGS += -O3 -D NDEBUG=1 -D RELEASE=1
+LDFLAGS += -s
+endif
+
+# dirty fix for visual studio
+ifeq ($(strip $(CONFIG)),Debug)
+CONFIG := debug
+endif
+
+ifeq ($(strip $(CONFIG)),debug)
 CFLAGS += -O0 -ggdb -ffunction-sections -D DEBUG=1
 CFLAGS += -D VALGRIND_SUCKS
 endif

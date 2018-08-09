@@ -41,6 +41,9 @@
 #define STATS_WIDTH (BCSPLAYER_NICKLEN + 5 + 5 + 2)
 #define STATS_HEIGHT (BCSSERVER_MAXCLIENTS + 2)
 
+#define MAPVIEW_WIDTH 80
+#define MAPVIEW_HEIGHT 24
+
 // WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
 
@@ -234,6 +237,8 @@ void *receiver_func(void *argv) {
 			break;
 
 			case BCSREPLT_SHUTDOWN:
+				// don't quit until frame is not drawn
+				pthread_mutex_lock(&pfs->mutex_frame);
 				curs_set(true);
 				endwin();
 				printf(ANSI_COLOR_RED "Server shutted down" ANSI_CLRST "\n");
@@ -320,11 +325,28 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
 		, .un.long_p = 0
 	};
 
+
+	pthread_mutex_lock(&pfs->mutex_self);
+	BCSCLST state = pfs->self.state;
+	pthread_mutex_unlock(&pfs->mutex_self);
+
 	switch(action) {
 		case BCSACTION_DISCONNECT: break;
-		case BCSACTION_MOVE: msg.un.ints.int_lo = htobe32(dir); break;
-		case BCSACTION_FIRE: break;
+		case BCSACTION_MOVE: {
+			// не спамим на сервер если ничё не можем
+			if(state != BCSCLST_CONNECTED && state != BCSCLST_PLAYING)
+				return;
+			msg.un.ints.int_lo = htobe32(dir);
+		} break;
+		case BCSACTION_FIRE: {
+			// не спамим на сервер если ничё не можем
+			if(state != BCSCLST_CONNECTED && state != BCSCLST_PLAYING)
+				return;
+		} break;
 		case BCSACTION_ROTATE: {
+			// не спамим на сервер если ничё не можем
+			if(state != BCSCLST_PLAYING)
+				return;
 			switch(dir) {
 				case BCSDIR_LEFT:
 				case BCSDIR_RIGHT:
@@ -361,9 +383,9 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 
 	// блокируем этот мьютекс только в случае чтения изменяющихся данных или записи изменений
 	pthread_mutex_lock(&pfs->mutex_self);
-	//size_t frames = 
-	++pfs->frames;
+	size_t frames = ++pfs->frames;
 	BCSCLIENT_PUBLIC self = pfs->self;
+	BCSMAP map = pfs->map;
 	WINDOW *mappad = pfs->mappad;
 	WINDOW *mapobj = pfs->mapobj;
 	//WINDOW *below = pfs->below;
@@ -371,11 +393,14 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 
 	// стата
 	bool show_stats = pfs->show_stats;
-	pthread_mutex_unlock(&pfs->mutex_self);
+	uint16_t others_count = pfs->others.count;
+	//pthread_mutex_unlock(&pfs->mutex_self);
 
-	//nassert(clearok(stdscr, true));
-	nassert(touchwin(stdscr));
-	nassert(touchwin(mapobj));
+	// repaint from scratch every second
+	if((frames % 30) == 0)
+		nassert(clearok(stdscr, true));
+	//nassert(touchwin(stdscr));
+	//nassert(touchwin(mapobj));
 	nassert(werase(stdscr));
 	nassert(werase(mapobj));
 
@@ -387,7 +412,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	}
 
 	// lock for all enemies, I don't think this is slow
-	pthread_mutex_lock(&pfs->mutex_self);
+	//pthread_mutex_lock(&pfs->mutex_self);
 	for(uint16_t i = 0; i < pfs->others.count; i++) {
 		if(i != pfs->others.index_self && pfs->others.array[i].state == BCSCLST_PLAYING) {
 			BCSCLIENT_PUBLIC enemy = pfs->others.array[i];
@@ -419,7 +444,8 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	if(stats->_clear) {
 		stats->_clear = false;
 		nassert(werase(stats));
-		nassert(box(stats, '#', '#'));
+		nassert(wresize(stats, others_count + 2, getmaxx(stats) + 1));
+		nassert(wborder(stats, '|', '|', '=', '=', '#', '#', '#', '#'));
 		for(uint16_t i = 0; i < pfs->others.count; ++i) {
 			nassert(mvwaddattrfstr(stats, i + 1, 1, BCSPLAYER_NICKLEN
 				, pfs->others.stats[i].nickname, A_NORMAL));
@@ -435,15 +461,18 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// следующие четыре - куда на экран проецируем
 	//nassert(touchwin(mappad));
 	//nassert(touchwin(mapobj));
+	// фиксим размеры: пришло время
+	int size_y = min(MAPVIEW_HEIGHT, min(h + 1, map.height));
+	int size_x = min(MAPVIEW_WIDTH, min(w + 1, map.width));
 	//nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
-	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
-	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, 0 + h - 1, 0 + w - 1, true));
+	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, size_y - 1, size_x - 1, true));
+	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, size_y - 1, size_x - 1, true));
 	//nassert(pnoutrefresh(mapobj, 0, 0, 0, 0, 0 + h, 0 + w));
 	//nassert(wnoutrefresh(mapobj));
 
 	if(show_stats) {
 		//pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
-		nassert(copywin(stats, stdscr, 0, 0, 0, 0, STATS_HEIGHT - 1, STATS_WIDTH, false));
+		nassert(copywin(stats, stdscr, 0, 0, 0, 0, others_count + 1, STATS_WIDTH - 1, false));
 	}
 
 	// эта панелька наложится поверх карты
@@ -534,7 +563,8 @@ int main(int argc, char **argv) {
 		if (getenv("LOGNAME") != NULL)
 			strncpy(pfs.self_ext.nickname, getenv("LOGNAME"), BCSPLAYER_NICKLEN);
 		else
-			strncpy(pfs.self_ext.nickname, cuserid(NULL), BCSPLAYER_NICKLEN);
+			//strncpy(pfs.self_ext.nickname, cuserid(NULL), BCSPLAYER_NICKLEN);
+			ALOGW("Could not determine your username\n");
 	}
 
 	if(argc > 1) {
@@ -939,7 +969,7 @@ connect_to:
 	pthread_t receiver_thread;
 	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
-	bool has_pressed = true;
+	bool has_pressed = false;
 	while(true) {
 		/////////////////////////
 		//      ОТРИСОВКА      //
@@ -1022,6 +1052,8 @@ connect_to:
 	}
 
 loop_leave:
+	// don't quit until frame is not drawn
+	pthread_mutex_lock(&pfs.mutex_frame);
 	curs_set(true);
 	endwin();
 

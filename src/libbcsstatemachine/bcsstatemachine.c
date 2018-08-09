@@ -49,26 +49,27 @@ bool bcsstatemachine_process_request(
     }
     pthread_mutex_unlock(&state->mutex_self);
 
-    switch(be32toh(msg->action)){
+    switch(be32toh(msg->action)) {
         case BCSACTION_CONNECT: // client sent CONNECT; 
-            switch(search_client(state, src)){ //ONLY IF THERE IS NO SUCH CLIENT IN ARRAY
+            switch(id) { //ONLY IF THERE IS NO SUCH CLIENT IN ARRAY
                 case -1:
                     ALOGW("received CONNECT from client\n");
                     // Add client to array
-                    switch(add_client(state, src, msg)){
+					//pthread_mutex_lock(&state->mutex_self);
+					id = add_client(state, src, msg);
+                    switch(id) {
                         case -1: // clients limit is settled
                             reply.type = htobe32(BCSREPLT_NACK);
                             flag = false;
                             break;
 
                         default:
-                            pthread_mutex_lock(&state->mutex_self);
                             state->player_count++;
-                            pthread_mutex_unlock(&state->mutex_self);
                             reply.type = htobe32(BCSREPLT_MAP);
                             log_print_cl_info(state);
                             break;
                     }
+					//pthread_mutex_unlock(&state->mutex_self);
                     __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
                     break;
@@ -99,13 +100,19 @@ bool bcsstatemachine_process_request(
                 
         case BCSACTION_DISCONNECT:
             ALOGW("received DISCONNECT from client\n");
+			//pthread_mutex_lock(&state->mutex_self);
             delete_client(state, src);
+			//pthread_mutex_unlock(&state->mutex_self);
             reply.type = htobe32(BCSREPLT_ACK);
             __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                              0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
 
         case BCSACTION_MOVE:
+			if(id == -1) {
+				flag = false;
+				break;
+			}
             ALOGW("received MOVE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch (state->client[id].public_info.state) {
@@ -161,11 +168,16 @@ bool bcsstatemachine_process_request(
                             flag = false;
                             break;
                     }
+				break;
 
-                default:
+                case BCSCLST_CONNECTING:
                     reply.type = htobe32(BCSREPLT_NACK);
                     __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
+					flag = false;
+				break;
+
+				default:
                     flag = false;
                     break;
             }
@@ -173,12 +185,18 @@ bool bcsstatemachine_process_request(
             break;
 
         case BCSACTION_FIRE:
+			if(id == -1) {
+				flag = false;
+				break;
+			}
             ALOGW("received FIRE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch(state->client[id].public_info.state){
                 case BCSCLST_CONNECTED:
-                    state->client[id].public_info.state = BCSCLST_RESPAWNING;
-                    __syscall(gettimeofday(&(state->client[id].private_info.time_last_fire), NULL));
+					// более логично сначала установить время, а только после изменить статус
+					// и вообще, время выстрела изначально 0, так что можно обойтись
+                    //__syscall(gettimeofday(&(state->client[id].private_info.time_last_fire), NULL));
+					state->client[id].public_info.state = BCSCLST_RESPAWNING;
                     //bcsgameplay_respawn(state, id);
                     break;
 
@@ -204,10 +222,14 @@ bool bcsstatemachine_process_request(
                     }
                     break;
 
-                default:
-                    reply.type = htobe32(BCSREPLT_NACK);
+				case BCSCLST_CONNECTING:
+				    reply.type = htobe32(BCSREPLT_NACK);
                     __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
+					flag = false;
+				break;
+
+                default:
                     flag = false;
                     break;
             }
@@ -215,6 +237,10 @@ bool bcsstatemachine_process_request(
             break;
         
         case BCSACTION_ROTATE:
+			if(id == -1) {
+				flag = false;
+				break;
+			}
             ALOGW("received ROTATE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch(state->client[id].public_info.state){
@@ -238,6 +264,9 @@ bool bcsstatemachine_process_request(
                     reply.type = htobe32(BCSREPLT_NACK);
                     __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
+					flag = false;
+				break;
+
 				default:
                     flag = false;
                     break;
@@ -248,6 +277,8 @@ bool bcsstatemachine_process_request(
         case BCSACTION_REQSTATS:
             ALOGW("received REQSTATS from client\n");
             uint16_t player_count = return_clients_size(state);
+			// доступ к state->bullets.count, ставим мьютекс...
+			pthread_mutex_lock(&state->mutex_self);
             uint16_t bullets_count = state->bullets.count;
 
             BCSMSGREPLY *stats_to_send = alloca(
@@ -268,7 +299,7 @@ bool bcsstatemachine_process_request(
                             + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count;
 
             BCSCLIENT_PUBLIC_EXT *array = (BCSCLIENT_PUBLIC_EXT*)(ann + 1);
-            pthread_mutex_lock(&state->mutex_self);
+            //pthread_mutex_lock(&state->mutex_self);
                for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
                    if(state->client[i].public_info.state != BCSCLST_FREESLOT){
                         array->frags = htobe16(state->client[i].public_ext_info.frags);
