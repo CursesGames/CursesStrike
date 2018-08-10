@@ -39,7 +39,7 @@ matrix:
     - tar -xf lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64.tar.xz --checkpoint=.100
     script:
     - make -f Makefile.MIPS projects tests
-    - CONFIG=wild make -f Makefile.ARM
+    - CONFIG=wild make -f Makefile.MIPS
     - CONFIG=release make -f Makefile.MIPS
 before_deploy: mkdir release && cp res/propeller.bcsmap bin && cd bin && ls -1 . | zip -9o@ ../release/bcs-$CC_ARCH.zip && cd .. && ls -1 release/*
 deploy:
