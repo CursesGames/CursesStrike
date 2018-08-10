@@ -5,7 +5,7 @@
 #include "vector.h"
 
 #ifdef VALGRIND_SUCKS
-#pragma message "Yeah, valgrind sucks on realloc()! We will try to work it out."
+//#pragma message "Yeah, valgrind sucks on realloc()! We will try to work it out."
 #define realloc(ptr,size) __force_realloc(ptr,size)
 #include <string.h>
 

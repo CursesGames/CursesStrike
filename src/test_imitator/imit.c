@@ -47,7 +47,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 	BCAST_UN un;
 	size_t count = 0;
 	struct ifaddrs *ifap_head;
-	__syscall(getifaddrs(&ifap_head));
+	__syswrap(getifaddrs(&ifap_head));
 	struct ifaddrs *ifap = ifap_head;
 	lassert(vector_init(ipv4_faces, BCSIFACES_APPROX));
 	while(ifap != NULL) {
@@ -431,35 +431,35 @@ start_bcast_scan:
 	iface_count = init_broadcast_receiver(&ifaces);
 
 	int *ubcls = (int*)malloc(sizeof(int) * ifaces.size);
-	__syscall(epollfd = epoll_create1(0));
+	__syswrap(epollfd = epoll_create1(0));
 	for(uint32_t i = 0; i < iface_count; i++) {
 		struct sockaddr_in sin = {
 			  .sin_addr.s_addr = ((BCAST_UN*)(&(ifaces.array[i])))->v4.bcast
 			, .sin_port = htobe16(BCSSERVER_BCAST_PORT)
 			, .sin_family = AF_INET
 		};
-		__syscall(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+		__syswrap(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 		// reuse addr to allow server & client on the same iface
-		__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
-		__syscall(bind(ubcls[i], (sockaddr*)&sin, sizeof(sin)));
+		__syswrap(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
+		__syswrap(bind(ubcls[i], (sockaddr*)&sin, sizeof(sin)));
 
 		struct epoll_event evt = {
 			  .events = EPOLLIN | EPOLLERR
 			, .data.fd = ubcls[i]
 		};
-		__syscall(epoll_ctl(epollfd, EPOLL_CTL_ADD, ubcls[i], &evt));
+		__syswrap(epoll_ctl(epollfd, EPOLL_CTL_ADD, ubcls[i], &evt));
 	}
 
 	VECTOR servers;
 	lassert(vector_init(&servers, 10)); // TODO: get rid of magic number
 	uint32_t number = 0;
 	struct timeval tv_last, tv_now, tv_diff;
-	__syscall(gettimeofday(&tv_last, NULL));
+	__syswrap(gettimeofday(&tv_last, NULL));
 
 	ALOGI("Scanning for servers, please wait...\n");
 	while(true) {
 		int ret;
-		__syscall(ret = epoll_wait(epollfd, &ev_catch, 1, BCAST_SCAN_TIMEOUT_SEC * 1000));
+		__syswrap(ret = epoll_wait(epollfd, &ev_catch, 1, BCAST_SCAN_TIMEOUT_SEC * 1000));
 		if(ret == 0) {
 			ALOGI("No broadcast into local networks, exiting.\n");
 			ALOGI("Maybe connect to server by IP:Port, or create your own?\n");
@@ -521,11 +521,11 @@ start_bcast_scan:
 				, number + 1
 			);
 			++number;
-			__syscall(gettimeofday(&tv_last, NULL));
+			__syswrap(gettimeofday(&tv_last, NULL));
 			continue;
 		}
 next_epevent:
-		__syscall(gettimeofday(&tv_now, NULL));
+		__syswrap(gettimeofday(&tv_now, NULL));
 		timersub(&tv_now, &tv_last, &tv_diff);
 		if(tv_diff.tv_sec >= BCAST_SCAN_TIMEOUT_SEC) {
 			ALOGI("Server scan finished\n");
@@ -570,12 +570,12 @@ next_epevent:
 	ALOGI("Connecting to %s:%hu\n", addrstr, ntohs(srv->endpoint.port));
 
 	VERBOSE ALOGV("Creating UDP socket... ");
-	__syscall(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+	__syswrap(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 	struct timeval rcvtimeo = {
 		  .tv_sec = (BCSRECV_TIMEO / 1000)
 		, .tv_usec = (BCSRECV_TIMEO % 1000)
 	};
-	__syscall(setsockopt(pfs.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
+	__syswrap(setsockopt(pfs.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
 	VERBOSE logprint("OK.\n");
 
 	VERBOSE ALOGV("Sending CONNECT...\n");

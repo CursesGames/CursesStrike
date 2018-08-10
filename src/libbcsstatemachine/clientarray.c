@@ -39,7 +39,7 @@ uint16_t return_clients_size(BCSSERVER_FULL_STATE *state) {
 
 // Put client data into array
 int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg) {
-    struct timeval tv;
+    timeval128_t tv;
     char *nick;
     int i;
     int num = -1;
@@ -49,7 +49,7 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BC
         for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
             if ((state->client[i].public_info.state) == BCSCLST_FREESLOT){
                 state->client[i].private_info.endpoint = *addr_client; // client endpoint
-                __syscall(gettimeofday(&(state->client[i].private_info.time_last_dgram), NULL)); 
+                __syswrap(gettimeofday(&(state->client[i].private_info.time_last_dgram), NULL)); 
                 state->client[i].public_info.state = BCSCLST_CONNECTING; // init state = wait for map
                 state->client[i].public_info.direction = BCSDIR_UP; // init direction
                 num = i;

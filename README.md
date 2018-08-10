@@ -14,11 +14,17 @@ mips-24kc openwrt | [![Build Status](https://ultibot.ru/services/traviswh/status
 How to build:
 - Clone this repo
 - `cd` to root directory of this repo
-- If you want to cross-compile,	set up your toolchain in Makefile.*arch* 
-- `make` to make release, or `CONFIG=debug make` if you want debugging symbols
+- `make help` will give you some help
+- `make` if you want debugging symbols, OR
+- `CONFIG=release make` to make release, OR
+- `CONFIG=wild make` to make wild release with the smallest size
 - Executables are in `bin` subdirectory
 - If you want a single target, just point it, for example: `make cs`
-- If you want a single target in debug configuration: `CONFIG=debug make cs`
+- If you want a single target in certain configuration: `CONFIG=release make cs`
+
+If you want to cross-compile:
+- Set up your toolchain in Makefile.*arch*, or pass `CROSS_COMPILE=<toolchain-canonical-name>` to the environment
+- Add `-f Makefile.*arch*` to the every `make` command, for example: `CONFIG=release make -f Makefile.MIPS cs`
 
 Feel free to send issues and pull requests.
 

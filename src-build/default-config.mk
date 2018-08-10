@@ -6,6 +6,15 @@ endif
 # avoid usage of `ld' itself
 LD := $(CC)
 
+# -r: save time by omitting `default' targets
+# -R: avoid auto-setting of CC, LD and some other variables
+# -s: silence is golden, enjoy short compilation messages
+ifneq ($(strip $(SILENCE_IS_GOLDEN)),)
+MKFLG := rR
+else
+MKFLG := rRs
+endif
+
 # пути до проекта
 ifeq ($(MAKELEVEL),0)
 BINDIR := $(ROOTDIR)/bin
@@ -22,8 +31,4 @@ BUILD_STATIC_LIBRARY := $(BUILD_SUBSYSTEM_PATH)/recipe_static.mk
 #BUILD_SHARED_LIBRARY := $(BUILD_SUBSYSTEM_PATH)/recipe_shared.mk
 BUILD_EXECUTABLE     := $(BUILD_SUBSYSTEM_PATH)/recipe_executable.mk
 
-#ifneq ($(strip $(shell realpath --version > /dev/null 2> /dev/null ; echo $$? )),0)
-#	echo You have no `realpath' utility! Exiting. ; exit 1
-#endif
-
-export
+#include $(BUILD_SUBSYSTEM_PATH)/help.mk

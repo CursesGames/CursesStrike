@@ -41,9 +41,11 @@ typedef struct {
 		uint16_t count;
 		BCSBULLET *array;
 	} bullets;
+	timeval128_t last_announce;
 	size_t frames;
 	bool redraw;
 	bool show_stats;
+	bool smooth_bullets;
 } BCSPLAYER_FULL_STATE;
 
 // структура состояния сервера = состояние клиентов на сервере

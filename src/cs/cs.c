@@ -83,7 +83,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
 	BCAST_UN un;
 	size_t count = 0;
 	struct ifaddrs *ifap_head;
-	__syscall(getifaddrs(&ifap_head));
+	__syswrap(getifaddrs(&ifap_head));
 	struct ifaddrs *ifap = ifap_head;
 	lassert(vector_init(ipv4_faces, BCSIFACES_APPROX));
 	while(ifap != NULL) {
@@ -144,7 +144,7 @@ void *receiver_func(void *argv) {
 				goto force_redraw;
 			}
 			else
-				__syscall(-1);
+				__syswrap(-1);
 		}
 		if(src.sin_addr.s_addr != server.addr || src.sin_port != server.port) {
 			ALOGD("Wrong datagram source: %s:%hu != %s:%hu\n"
@@ -196,6 +196,7 @@ void *receiver_func(void *argv) {
 					pfs->bullets.array[i].x = be16toh(pfs->bullets.array[i].x);
 					pfs->bullets.array[i].y = be16toh(pfs->bullets.array[i].y);
 				}
+				__syswrap(gettimeofday(&pfs->last_announce, NULL));
 				//pthread_mutex_unlock(&pfs->mutex_self);
 			break;
 
@@ -248,7 +249,7 @@ void *receiver_func(void *argv) {
 			case BCSREPLT_NONE: 
 				ALOGW("Server sent message of type = %u, do nothing\n", be32toh(repl->type));
 			break;
-			default: __syscall(-1);
+			default: __syswrap(-1);
 		}
 		pthread_mutex_unlock(&pfs->mutex_self);
 
@@ -396,8 +397,8 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	uint16_t others_count = pfs->others.count;
 	//pthread_mutex_unlock(&pfs->mutex_self);
 
-	// repaint from scratch every second
-	if((frames % 30) == 0)
+	// repaint from scratch every 30 frames?
+	if((frames % 60) == 0)
 		nassert(clearok(stdscr, true));
 	//nassert(touchwin(stdscr));
 	//nassert(touchwin(mapobj));
@@ -424,6 +425,13 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 
 	for(uint16_t i = 0; i < pfs->bullets.count; ++i) {
 		if(pfs->bullets.array[i].y < h && pfs->bullets.array[i].x < w) {
+			uint16_t bx = pfs->bullets.array[i].x;
+			uint16_t by = pfs->bullets.array[i].y;
+			// check for glitches
+			BCSMAPPRIMITIVE prim = pfs->map.map_primitives[by * map.width + bx];
+			if(prim != PUNIT_OPEN_SPACE && prim != PUNIT_WATER)
+				continue;
+
 			char c = ' ';
 			switch(pfs->bullets.array[i].direction) {
 				case BCSDIR_LEFT:
@@ -436,7 +444,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 					c = '|';
 				break;
 			}
-			nassert(mvwputch(mapobj, pfs->bullets.array[i].y, pfs->bullets.array[i].x, c));
+			nassert(mvwputch(mapobj, by, bx, c));
 		}
 	}
 
@@ -444,7 +452,7 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	if(stats->_clear) {
 		stats->_clear = false;
 		nassert(werase(stats));
-		nassert(wresize(stats, others_count + 2, getmaxx(stats) + 1));
+		nassert(wresize(stats, others_count + 2, getmaxx(stats)));
 		nassert(wborder(stats, '|', '|', '=', '=', '#', '#', '#', '#'));
 		for(uint16_t i = 0; i < pfs->others.count; ++i) {
 			nassert(mvwaddattrfstr(stats, i + 1, 1, BCSPLAYER_NICKLEN
@@ -453,7 +461,9 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 			nassert(mvwprintw(stats, i + 1, BCSPLAYER_NICKLEN + 6, "%4u", pfs->others.stats[i].deaths));
 		}
 	}
-	
+
+	if(pfs->smooth_bullets)
+		nassert(mvwaddstr(stdscr, h - 1, 0, "SMOOTH"));
 	pthread_mutex_unlock(&pfs->mutex_self);
 
 	// copy a part of pad
@@ -464,16 +474,18 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	// фиксим размеры: пришло время
 	int size_y = min(MAPVIEW_HEIGHT, min(h + 1, map.height));
 	int size_x = min(MAPVIEW_WIDTH, min(w + 1, map.width));
+
 	//nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, size_y - 1, size_x - 1, true));
-	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, size_y - 1, size_x - 1, true));
-	//nassert(pnoutrefresh(mapobj, 0, 0, 0, 0, 0 + h, 0 + w));
-	//nassert(wnoutrefresh(mapobj));
 
 	if(show_stats) {
 		//pnoutrefresh(stats, 0, 0, 0, 0, STATS_HEIGHT, STATS_WIDTH);
 		nassert(copywin(stats, stdscr, 0, 0, 0, 0, others_count + 1, STATS_WIDTH - 1, false));
 	}
+
+	nassert(copywin(mapobj, stdscr, 0, 0, 0, 0, size_y - 1, size_x - 1, true));
+	//nassert(pnoutrefresh(mapobj, 0, 0, 0, 0, 0 + h, 0 + w));
+	//nassert(wnoutrefresh(mapobj));
 
 	// эта панелька наложится поверх карты
 	//sprintf(buf, "Frames: %zu", frames);
@@ -486,6 +498,68 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	nassert(doupdate());
 	// порисовали и хватит
 	pthread_mutex_unlock(&pfs->mutex_frame);
+}
+
+// это отдельный поток
+void *smooth_bullets(void *argv) {
+	BCSPLAYER_FULL_STATE *pfs = (BCSPLAYER_FULL_STATE*)argv;
+	timeval128_t now, last = { .tv_sec = 0, .tv_usec = 0 }, diff;
+	timeval128_t do_it = {
+		  .tv_sec = 0
+		, .tv_usec = 11111
+	};
+	
+	bool need_refresh = false;
+	bool do_smoothing;
+	while(true) {
+		diff.tv_usec = do_it.tv_usec;
+		pthread_mutex_lock(&pfs->mutex_self);
+		do_smoothing = pfs->smooth_bullets;
+		// если нет пуль то нечего и сглаживать
+		if(pfs->bullets.count == 0)
+			goto unlock;
+		// если пришёл новый анонс, нужно обновить данные
+		if(timercmp(&pfs->last_announce, &last, >)) {
+			last = pfs->last_announce;
+		}
+		__syswrap(gettimeofday(&now, NULL));
+		timersub(&now, &last, &diff);
+		if(timercmp(&diff, &do_it, >=)) {
+			// двигаем пульки
+			for(uint16_t i = 0; i < pfs->bullets.count; ++i) {
+				switch(pfs->bullets.array[i].direction) {
+					case BCSDIR_LEFT: --(pfs->bullets.array[i].x); break;
+					case BCSDIR_UP: --(pfs->bullets.array[i].y); break;
+					case BCSDIR_RIGHT: ++(pfs->bullets.array[i].x); break;
+					case BCSDIR_DOWN: ++(pfs->bullets.array[i].y); break;
+				}
+			}
+			// думаю, это нужно
+			timeval128_t tmp;
+			timeradd(&last, &do_it, &tmp);
+			last = tmp;
+			need_refresh = true;
+			ALOGD("Smoothed\n");
+		}
+unlock:
+		pthread_mutex_unlock(&pfs->mutex_self);
+		if(!do_smoothing) {
+			sleep(1);
+			continue;
+		}
+
+		if (need_refresh) {
+			draw_window(pfs);
+			need_refresh = false;
+		}
+		else {
+			// выжидаем более удачный момент
+			usleep(diff.tv_usec);
+		}
+	}
+	
+	// ReSharper disable once CppUnreachableCode
+	return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -554,6 +628,7 @@ int main(int argc, char **argv) {
 		, .sockfd = -1 // erroneous socket
 		, .redraw = true
 		, .show_stats = false
+		, .smooth_bullets = true
 	};
 
 	char buf[BCSDGRAM_MAX];
@@ -612,23 +687,23 @@ start_bcast_scan:
 	iface_count = init_broadcast_receiver(&ifaces);
 
 	int *ubcls = (int*)malloc(sizeof(int) * ifaces.size);
-	__syscall(epollfd = epoll_create1(0));
+	__syswrap(epollfd = epoll_create1(0));
 	for(uint i = 0; i < iface_count; i++) {
 		struct sockaddr_in sin = {
 			  .sin_addr.s_addr = ((BCAST_UN*)(&(ifaces.array[i])))->v4.bcast
 			, .sin_port = htobe16(BCSSERVER_BCAST_PORT)
 			, .sin_family = AF_INET
 		};
-		__syscall(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+		__syswrap(ubcls[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 		// reuse addr to allow server & client on the same iface
-		__syscall(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
-		__syscall(bind(ubcls[i], (sockaddr*)&sin, sizeof(sin)));
+		__syswrap(setsockopt(ubcls[i], SOL_SOCKET, SO_REUSEADDR, &reuse_port, sizeof(reuse_port)));
+		__syswrap(bind(ubcls[i], (sockaddr*)&sin, sizeof(sin)));
 
 		struct epoll_event evt = {
 			  .events = EPOLLIN | EPOLLERR
 			, .data.fd = ubcls[i]
 		};
-		__syscall(epoll_ctl(epollfd, EPOLL_CTL_ADD, ubcls[i], &evt));
+		__syswrap(epoll_ctl(epollfd, EPOLL_CTL_ADD, ubcls[i], &evt));
 	}
 
 	vector_free(&ifaces);
@@ -636,13 +711,13 @@ start_bcast_scan:
 	VECTOR servers;
 	lassert(vector_init(&servers, BCSSERVERS_APPROX));
 	uint32_t number = 0;
-	struct timeval tv_last, tv_now, tv_diff;
-	__syscall(gettimeofday(&tv_last, NULL));
+	timeval128_t tv_last, tv_now, tv_diff;
+	__syswrap(gettimeofday(&tv_last, NULL));
 
 	ALOGI("Scanning for servers, please wait...\n");
 	while(true) {
 		int ret;
-		__syscall(ret = epoll_wait(epollfd, &ev_catch, 1, BCAST_SCAN_TIMEOUT_SEC * 1000));
+		__syswrap(ret = epoll_wait(epollfd, &ev_catch, 1, BCAST_SCAN_TIMEOUT_SEC * 1000));
 		if(ret == 0) {
 			ALOGI("No broadcast into local networks, exiting.\n");
 			ALOGI("Maybe connect to server by IP:Port, or create your own?\n");
@@ -704,11 +779,11 @@ start_bcast_scan:
 				, number + 1
 			);
 			++number;
-			__syscall(gettimeofday(&tv_last, NULL));
+			__syswrap(gettimeofday(&tv_last, NULL));
 			continue;
 		}
 next_epevent:
-		__syscall(gettimeofday(&tv_now, NULL));
+		__syswrap(gettimeofday(&tv_now, NULL));
 		timersub(&tv_now, &tv_last, &tv_diff);
 		if(tv_diff.tv_sec >= BCAST_SCAN_TIMEOUT_SEC) {
 			ALOGI("Server scan finished\n");
@@ -756,12 +831,12 @@ connect_to:
 	pfs.endpoint.sin_port = htobe16(pfs.endpoint.sin_port);
 
 	VERBOSE ALOGV("Creating UDP socket... ");
-	__syscall(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
-	struct timeval rcvtimeo = {
+	__syswrap(pfs.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+	timeval128_t rcvtimeo = {
 		  .tv_sec = (BCSRECV_TIMEO / 1000)
 		, .tv_usec = (BCSRECV_TIMEO % 1000)
 	};
-	__syscall(setsockopt(pfs.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
+	__syswrap(setsockopt(pfs.sockfd, SOL_SOCKET, SO_RCVTIMEO, &rcvtimeo, sizeof(rcvtimeo)));
 	VERBOSE logprint("OK.\n");
 
 	// есть смысл сначала создать структуру, а только потом проштамповать
@@ -776,10 +851,6 @@ connect_to:
 	msg->un.ints.int_lo = htobe32(BCSPROTO_VERSION);
 	msg->un.ints.int_hi = htobe32(nickname_len);
 	strcpy((char*)(msg + 1), pfs.self_ext.nickname);
-
-	FILE *f1 = fopen("connect.log", "wb");
-	fwrite(msg, connect_len, 1, f1);
-	fclose(f1);
 
 	VERBOSE ALOGV("Sending CONNECT... ");
 
@@ -805,13 +876,14 @@ connect_to:
 				continue;
 			}
 			else
-				__syscall(-1);
+				__syswrap(-1);
 		}
 
 		if(    sin_src.sin_addr.s_addr != pfs.endpoint.sin_addr.s_addr
 			|| sin_src.sin_port        != pfs.endpoint.sin_port
 		) {
 			ALOGD("Source endpoint mismatch, skipping\n");
+			sleep(1);
 			continue;
 		}
 
@@ -839,12 +911,12 @@ connect_to:
 	VERBOSE ALOGV("Server told to download the map.\n");
 	VERBOSE ALOGD("Connecting to the TCP socket... ");
 	int sock_tcp;
-	__syscall(sock_tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-	__syscall(connect(sock_tcp, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)));
+	__syswrap(sock_tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+	__syswrap(connect(sock_tcp, (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)));
 	VERBOSE logprint("OK.\n");
 
 	VERBOSE ALOGV("Receiving map params... ");
-	__syscall(recv(sock_tcp, &pfs.map, 4, MSG_WAITALL)); // FIXME: magic const 4 is a sizeof (w+h)
+	__syswrap(recv(sock_tcp, &pfs.map, 4, MSG_WAITALL)); // FIXME: magic const 4 is a sizeof (w+h)
 	pfs.map.width = be16toh(pfs.map.width);
 	pfs.map.height = be16toh(pfs.map.height);
 	VERBOSE logprint("%hux%hu\n", pfs.map.width, pfs.map.height);
@@ -852,7 +924,7 @@ connect_to:
 	ssize_t size_in_bytes = pfs.map.width * pfs.map.height;
 	pfs.map.map_primitives = (uint8_t*)malloc(size_in_bytes);
 	VERBOSE ALOGV("Receiving map data... ");
-	__syscall(recv(sock_tcp, pfs.map.map_primitives, size_in_bytes, MSG_WAITALL));
+	__syswrap(recv(sock_tcp, pfs.map.map_primitives, size_in_bytes, MSG_WAITALL));
 	VERBOSE logprint("%lu bytes OK.\n", size_in_bytes);
 
 	close(sock_tcp);
@@ -877,7 +949,7 @@ connect_to:
 				continue;
 			}
 			else
-				__syscall(-1);
+				__syswrap(-1);
 		}
 		if(    sin_src.sin_addr.s_addr != pfs.endpoint.sin_addr.s_addr
 			|| sin_src.sin_port        != pfs.endpoint.sin_port
@@ -907,7 +979,7 @@ connect_to:
 	// прелюдия закончена, мы должны быть на сервере.
 	pfs.self.state = BCSCLST_CONNECTED;
 	// перенаправляем лог в файл
-	sysassert(freopen("cs_client.log", "w", stderr) != NULL);
+	sassert(freopen("cs_client.log", "w", stderr) != NULL);
 
 	// NCurses
 	nassert(initscr());
@@ -916,6 +988,7 @@ connect_to:
 	nassert(curs_set(false));
 	nassert(noecho());
 	idcok(stdscr, true);
+	idcok(curscr, true);
 	nassert(idlok(stdscr, false));
 	nassert(idlok(curscr, false));
 	nassert(leaveok(stdscr, true));
@@ -950,24 +1023,11 @@ connect_to:
 
 	init_map(&pfs.mappad, &pfs.map);
 
-	// запуск таймера
-	/*struct sigevent sgv = {
-		  .sigev_notify = SIGEV_THREAD
-		, .sigev_value = { .sival_ptr = &pfs }
-		, .sigev_signo = SIGALRM
-		, .sigev_notify_function = timer_detonate
-        , .sigev_notify_attributes = 0
-	};
-	timer_t timer_id;
-	int timer_fd;
-	__syscall(timer_fd = timer_create(CLOCK_MONOTONIC, &sgv, &timer_id));
-	struct itimerspec t_interval = { // 30 fps
-		  .it_interval = { .tv_sec = 0, .tv_nsec = 33333333 }
-		, .it_value    = { .tv_sec = 0, .tv_nsec = 33333333 }
-	};
-	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));*/
+	pthread_t thread_smoother;
+	sassert(pthread_create(&thread_smoother, NULL, smooth_bullets, &pfs) == 0);
+
 	pthread_t receiver_thread;
-	lassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
+	sassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
 
 	bool has_pressed = false;
 	while(true) {
@@ -983,8 +1043,7 @@ connect_to:
 		//         ВВОД        //
 		/////////////////////////
 		//nassert(nodelay(stdscr, true));
-		int64_t key = raw_wgetch(stdscr);
-		FILE *f;
+		int32_t key = raw_wgetch(stdscr);
 		switch(key) {
 			/////////////////////////
 			//       ОБРАБОТКА     //
@@ -997,12 +1056,18 @@ connect_to:
 
 			case KEY_F(8): { // F8
 				pthread_mutex_lock(&pfs.mutex_frame);
-				f = fopen("stdscr.ncurses.log", "wb"); putwin(stdscr, f); fclose(f);
+				FILE *f = fopen("stdscr.ncurses.log", "wb"); putwin(stdscr, f); fclose(f);
 				f = fopen("curscr.ncurses.log", "wb"); putwin(curscr, f); fclose(f);
 				f = fopen("newscr.ncurses.log", "wb"); putwin(newscr, f); fclose(f);
 				f = fopen("mappad.ncurses.log", "wb"); putwin(pfs.mappad, f); fclose(f);
 				f = fopen("mapobj.ncurses.log", "wb"); putwin(pfs.mapobj, f); fclose(f);
 				pthread_mutex_unlock(&pfs.mutex_frame);
+			} break;
+
+			case KEY_F(7): { // F7
+				pthread_mutex_lock(&pfs.mutex_self);
+				pfs.smooth_bullets = !pfs.smooth_bullets;
+				pthread_mutex_unlock(&pfs.mutex_self);
 			} break;
 
 			case RAW_KEY_TAB:

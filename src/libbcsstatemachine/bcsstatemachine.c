@@ -38,14 +38,14 @@ bool bcsstatemachine_process_request(
     BCSMSGREPLY reply; //reply to client
     BCSBULLET *bullet;
     reply.packet_no = msg->packet_no; // packet to send number
-    struct timeval val_time, res;
+    timeval128_t val_time, res;
     uint16_t x, y;
     bool flag = true;
 
     pthread_mutex_lock(&state->mutex_self);
     int u_fd = state->sock_u; // copy descriptor from state 
     if(id != -1){
-        __syscall(gettimeofday(&state->client[id].private_info.time_last_dgram, NULL));
+        __syswrap(gettimeofday(&state->client[id].private_info.time_last_dgram, NULL));
     }
     pthread_mutex_unlock(&state->mutex_self);
 
@@ -70,12 +70,19 @@ bool bcsstatemachine_process_request(
                             break;
                     }
 					//pthread_mutex_unlock(&state->mutex_self);
-                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+					reply.packet_no = msg->packet_no;
+                    __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
                     break;
 
                 default:
-                    flag = false;
+					// игрок может вернуться на то же место, если совпадает порт
+					pthread_mutex_lock(&state->mutex_self);
+					reply.type = htobe32(BCSREPLT_MAP);
+					reply.packet_no = msg->packet_no;
+					__syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+                             0, (sockaddr*)src, sizeof(sockaddr_in)));
+		            pthread_mutex_unlock(&state->mutex_self);
                     break;
             }
             break;
@@ -94,7 +101,8 @@ bool bcsstatemachine_process_request(
                 flag = false;
             }
             pthread_mutex_unlock(&state->mutex_self);
-            __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
+			reply.packet_no = msg->packet_no;
+            __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                              0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
                 
@@ -104,7 +112,8 @@ bool bcsstatemachine_process_request(
             delete_client(state, src);
 			//pthread_mutex_unlock(&state->mutex_self);
             reply.type = htobe32(BCSREPLT_ACK);
-            __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+			reply.packet_no = msg->packet_no;
+            __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                              0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
 
@@ -172,7 +181,8 @@ bool bcsstatemachine_process_request(
 
                 case BCSCLST_CONNECTING:
                     reply.type = htobe32(BCSREPLT_NACK);
-                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+					reply.packet_no = msg->packet_no;
+                    __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
 					flag = false;
 				break;
@@ -201,7 +211,7 @@ bool bcsstatemachine_process_request(
                     break;
 
                 case BCSCLST_PLAYING:
-                    __syscall(gettimeofday(&val_time, NULL));
+                    __syswrap(gettimeofday(&val_time, NULL));
                     timersub(&val_time, &state->client[id].private_info.time_last_fire, &res);
                     //ALOGI("res time: %ld.%06ld\n", res.tv_sec, res.tv_usec);
                     val_time.tv_sec = 0;
@@ -215,7 +225,7 @@ bool bcsstatemachine_process_request(
                         bullet->direction = state->client[id].public_info.direction;
                         LIST_VALTYPE val = { .ptr = bullet };
                         linkedlist_push_back(&state->bullets, val);
-                        __syscall(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
+                        __syswrap(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
                     }
                     else {
                         flag = false;
@@ -224,7 +234,8 @@ bool bcsstatemachine_process_request(
 
 				case BCSCLST_CONNECTING:
 				    reply.type = htobe32(BCSREPLT_NACK);
-                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+					reply.packet_no = msg->packet_no;
+                    __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
 					flag = false;
 				break;
@@ -262,7 +273,8 @@ bool bcsstatemachine_process_request(
 
 				case BCSCLST_CONNECTING:
                     reply.type = htobe32(BCSREPLT_NACK);
-                    __syscall(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
+					reply.packet_no = msg->packet_no;
+                    __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY), 
                                      0, (sockaddr*)src, sizeof(sockaddr_in)));
 					flag = false;
 				break;
@@ -288,6 +300,7 @@ bool bcsstatemachine_process_request(
             );
 
             stats_to_send->type = htobe32(BCSREPLT_STATS);
+			stats_to_send->packet_no = msg->packet_no;
             //__syscall(gettimeofday(&(stats_to_send->time_gen), NULL));
 
             BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(stats_to_send + 1);
@@ -309,7 +322,7 @@ bool bcsstatemachine_process_request(
                     }
                 }
             pthread_mutex_unlock(&state->mutex_self);
-            __syscall(sendto(u_fd, stats_to_send, annlen, 
+            __syswrap(sendto(u_fd, stats_to_send, annlen, 
                              0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
 

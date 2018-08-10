@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <netinet/in.h>
 
-// this include is important on MIPS for `struct timeval'
+// this include is important on MIPS for `timeval128_t'
 // ReSharper disable once CppUnusedIncludeDirective
 #include <sys/time.h>
 #include "../liblinux_util/linux_util.h"
@@ -62,7 +62,7 @@
 #define NICK_SIZE BCSPLAYER_NICKLEN
 #define CLIENTS_NUM BCSSERVER_MAXCLIENTS
 
-STATIC_ASSERT(sizeof(struct timeval) == 16);
+STATIC_ASSERT(sizeof(timeval128_t) == 16);
 STATIC_ASSERT(sizeof(struct sockaddr_in) == 16);
 
 // unions to simplify broadcasting
@@ -202,9 +202,9 @@ STATIC_ASSERT(sizeof(BCSCLIENT_PUBLIC_EXT) == 24);
 typedef struct __bcsclient_info_private {
 	// timestamp of last fire event,
 	// to limit fire rate
-	struct timeval time_last_fire;
+	timeval128_t time_last_fire;
 	// timestamp of last received datagram, to kick on connection drop
-	struct timeval time_last_dgram;
+	timeval128_t time_last_dgram;
 	// ip address and port of client
 	struct sockaddr_in endpoint; // 16 bytes
 	// last received packet no
@@ -237,7 +237,7 @@ STATIC_ASSERT(sizeof(BCSMSGPARAM) == 8);
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
 // accurate to microseconds
-	struct timeval time_gen;
+	timeval128_t time_gen;
 // TODO: номер может переполниться, добавить обработку такой ситуации
 	uint32_t packet_no;
 // action that the client wants to do
@@ -250,7 +250,7 @@ STATIC_ASSERT(sizeof(BCSMSG) == 32);
 // базовая часть сообщения сервера
 typedef struct __bcsmsg_reply {
 // accurate to microseconds
-	struct timeval time_gen;
+	timeval128_t time_gen;
 // number of packet from incoming message
 // из приходящего сообщения
 	uint32_t packet_no;

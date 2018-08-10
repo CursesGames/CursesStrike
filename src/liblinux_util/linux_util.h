@@ -48,6 +48,11 @@
 #define ANSI_COLOR_RESET          "\x1b[0m"
 #define ANSI_CLRST                ANSI_COLOR_RESET
 
+// WARNING: evaluates twice
+#define min(a,b) ((a) < (b) ? (a) : (b))
+// WARNING: evaluates twice
+#define max(a,b) ((a) > (b) ? (a) : (b))
+
 // output
 #define logprint(...) fprintf(stderr, __VA_ARGS__)
 
@@ -63,13 +68,25 @@
 // Verbose
 #define ALOGV(...) logprint(ANSI_BKGRD_WHITE ANSI_COLOR_BLACK "[V]" ANSI_CLRST " " __VA_ARGS__)
 
+// https://www.guyrutenberg.com/2008/12/20/expanding-macros-into-string-constants-in-c
+#define STR_EXPAND(tok) #tok
+#define STR(tok) STR_EXPAND(tok)
+
+#ifdef WILDRELEASE
+#define PASSSTR(x) ""
+#else
+#define PASSSTR(x) STR(x)
+#endif
+
 // assert (release-time)
 // мягкая проверка условия. напечатает ошибку, но выполнение не прервётся
-#define lassert(x) (void)((!!(x)) || syscall_print_error(#x, __FILE__, __LINE__, 0))
+#define lassert(x) (void)((!!(x)) || syscall_print_error(PASSSTR(x), __FILE__, __LINE__, 0))
 // жёсткая проверка условия. напечатает ошибку и развалит программу через abort()
-#define sysassert(x) (void)((!!(x)) || syscall_error(#x, __FILE__, __LINE__))
+#define sassert(x) (void)((!!(x)) || syscall_error(PASSSTR(x), __FILE__, __LINE__))
 // жёсткая проверка условия, как и выше, ориентированная на системные вызовы
-#define __syscall(x) sysassert((x) != -1)
+#define __syswrap(x) sassert((x) != -1)
+// проверка условия и вызов пользовательской функции, если условие нарушено
+#define custom_assert(x,y) (void)(!!(x) || y(PASSSTR(x), __FILE__, __LINE__))
 
 // assert (compile-time)
 //#define STATIC_ASSERT(x) { int __temp_static_assert[(x) ? -1 : 1]; }
@@ -84,7 +101,7 @@ extern bool verbose;
 #define VERBOSE if(verbose)
 
 // exported functions
-// call syscall_print_error, calls abort() and if there is ncurses calls endwin()
+// call syscall_print_error, call endwin() if there is ncurses, and call abort()
 extern int syscall_error(const char *x, const char *file, int line);
 // prints error string from err_no to stderr
 extern int syscall_print_error(const char *x, const char *file, int line, int err_no);

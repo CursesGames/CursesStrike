@@ -10,7 +10,7 @@ uint32_t bcsproto_next_packet_no = 0;
 inline void bcsproto_new_packet(BCSMSG *msg) {
 	msg->packet_no = htobe32(bcsproto_next_packet_no);
 	++bcsproto_next_packet_no;
-	__syscall(gettimeofday(&msg->time_gen, NULL));
+	__syswrap(gettimeofday(&msg->time_gen, NULL));
 }
 
 ssize_t sendto2(

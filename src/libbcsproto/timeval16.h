@@ -1,13 +1,16 @@
 #pragma once
 
-#ifdef TIMEVAL16
+#include <time.h>
+// this may be useful for MIPS
+// ReSharper disable once CppUnusedIncludeDirective
+#include <sys/time.h>
 
-struct timeval_x {
+#if __WORDSIZE == 64
+typedef struct timeval timeval128_t;
+#else
+typedef struct {
 	time_t tv_sec;
 	suseconds_t tv_usec;
 	char _pad[16 - sizeof(struct timeval)];
-};
-
-#define timeval timeval_x
-
+} timeval128_t;
 #endif

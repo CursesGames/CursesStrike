@@ -229,7 +229,7 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id)
         return false;
     }
 
-    struct timeval seed;
+    timeval128_t seed;
     
     if (gettimeofday(&seed, NULL) == -1) {
         perror("random failed");

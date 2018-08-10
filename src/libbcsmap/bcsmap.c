@@ -38,7 +38,7 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
     memset(&bmp_header, 0, sizeof(bmp_header));
     memset(&bmp_info, 0, sizeof(bmp_info));
 
-    __syscall(source_bmp_fd = open(filename, O_RDONLY));
+    __syswrap(source_bmp_fd = open(filename, O_RDONLY));
 
     // reading bmp file header
     // If reading process has been interruped of some signal
@@ -55,7 +55,7 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
             if (errno == EINTR) {
                 continue;
             }
-            __syscall(now_read);
+            __syswrap(now_read);
         }
 
         bmp_header_size -= now_read;
@@ -65,7 +65,7 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
     // check BMP format
     if (bmp_header.bfType != 0x4D42) {
         ALOGE("Unsupported file format\n");
-        __syscall(close(source_bmp_fd));
+        __syswrap(close(source_bmp_fd));
         exit(EXIT_FAILURE);
     }
 
@@ -78,7 +78,7 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
             if (errno == EINTR) {
                 continue;
             }
-            __syscall(now_read);
+            __syswrap(now_read);
         }
 
         bmp_info_size -= now_read;
@@ -86,7 +86,7 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map)
     }
 
     // jumping to raster data;
-    __syscall(lseek(source_bmp_fd, bmp_header.bfOffBits, SEEK_SET));
+    __syswrap(lseek(source_bmp_fd, bmp_header.bfOffBits, SEEK_SET));
 
     // calculate padding of bmp file
     padding = (4 - (RGB_NUM*bmp_info.biWidth % 4)) % 4;
@@ -172,16 +172,16 @@ bool bcsmap_save(const char *filename, BCSMAP *map)
     map->height = htobe16(map->height);
     map->width = htobe16(map->width);
 
-    __syscall(destination_fd = creat(filename, 0644));
+    __syswrap(destination_fd = creat(filename, 0644));
 
-    __syscall(write(destination_fd, bcsmap_id, sizeof(bcsmap_id)));
+    __syswrap(write(destination_fd, bcsmap_id, sizeof(bcsmap_id)));
 
-    __syscall(write(destination_fd, map, sizeof(map->height)*2));
+    __syswrap(write(destination_fd, map, sizeof(map->height)*2));
 
     // writing primitives on chunks
     iterator = map->map_primitives;
     while (true) {
-        __syscall(now_write = write(destination_fd, iterator, 
+        __syswrap(now_write = write(destination_fd, iterator, 
                     min(left_bytes,_BUF_SIZE)));
         if (now_write == left_bytes) {
             break;
@@ -190,7 +190,7 @@ bool bcsmap_save(const char *filename, BCSMAP *map)
         iterator += now_write;
     }
 
-    __syscall(close(destination_fd));
+    __syswrap(close(destination_fd));
 
     // translation into LE
     map->height = htobe16(map->height);
@@ -220,7 +220,7 @@ bool bcsmap_load(const char *filename, BCSMAP *map)
 	    return false;
 
     // reading contorl string
-    __syscall(read(bcsmap_fd, bcsmap_check, sizeof(bcsmap_check)));
+    __syswrap(read(bcsmap_fd, bcsmap_check, sizeof(bcsmap_check)));
 
     if (strcmp(bcsmap_check, "csm") != 0) {
         ALOGE("This format is not a map format");
@@ -228,7 +228,7 @@ bool bcsmap_load(const char *filename, BCSMAP *map)
     }
 
     // reading height and width of map
-    __syscall(read(bcsmap_fd, map, sizeof(map->height)*2));
+    __syswrap(read(bcsmap_fd, map, sizeof(map->height)*2));
 
     // accounting for the possibility BE
     map->height = be16toh(map->height);
@@ -245,7 +245,7 @@ bool bcsmap_load(const char *filename, BCSMAP *map)
             if (errno == EINTR) {
                 continue;
             }
-            __syscall(now_read);
+            __syswrap(now_read);
         }
 
         temp_primitive = mempcpy(temp_primitive, buf, now_read);

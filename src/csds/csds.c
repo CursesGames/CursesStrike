@@ -59,7 +59,7 @@ void *send_broadcast(void *argv) {
     const int bc_enable = 1;
 	VECTOR *ifaces = (VECTOR*)argv;
 
-    __syscall(getifaddrs(&ifaddr));
+    __syswrap(getifaddrs(&ifaddr));
 	struct ifaddrs *ifaddr_head = ifaddr;
 
     while(ifaddr != NULL) {
@@ -77,8 +77,8 @@ void *send_broadcast(void *argv) {
         // Initialize socket descriptor
 		struct bc_data *iface = malloc(sizeof(struct bc_data));
 		int sock;
-    	__syscall(sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
-		__syscall(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bc_enable, sizeof(bc_enable)));
+    	__syswrap(sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+		__syswrap(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bc_enable, sizeof(bc_enable)));
 
         // Setting up port number and address
 		sockaddr_in sin = {
@@ -124,7 +124,7 @@ next_iface:
     while(true) {
         for(size_t i = 0; i < n; i++) {
 			struct bc_data *iface = array[i].ptr;
-            __syscall(sendto(iface->broadcast_fd, &beacon, sizeof(BCSBEACON), 0, 
+            __syswrap(sendto(iface->broadcast_fd, &beacon, sizeof(BCSBEACON), 0, 
 				(sockaddr*)&(iface->bc_addr), sizeof(sockaddr_in)));
         }
 		// no spam, only one beacon per second
@@ -203,10 +203,21 @@ void send_announces(sigval_t argv) {
 		array_bullet[n].y = htobe16(array_bullet[n].y);
 		++n;
 	}
-	// респануть игроков
-	struct timeval now;
-	__syscall(gettimeofday(&now, NULL));
+	// респануть игроков и кикнуть неактивных
+	timeval128_t now;
+	__syswrap(gettimeofday(&now, NULL));
+	timeval128_t kick_deadline = now;
+	kick_deadline.tv_sec -= 60; // allow 60 sec of inactivity
 	for(uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
+		if(state->client[i].public_info.state != BCSCLST_FREESLOT
+			&& timercmp(&kick_deadline, &state->client[i].private_info.time_last_dgram, >=)) {
+			// kick
+			ALOGI("Kicked %s (id = %u) for inactivity.\n"
+				, state->client[i].public_ext_info.nickname, i);
+			--(state->player_count);
+			memset(&state->client[i], 0, sizeof(BCSCLIENT));
+			continue;
+		}
 		if(state->client[i].public_info.state == BCSCLST_RESPAWNING) {
 			//ALOGD("Now: %lu.%lu, spawn at %lu.%lu"
 			//	, now.tv_sec, now.tv_usec
@@ -272,7 +283,7 @@ void send_announces(sigval_t argv) {
             ) { // if clients[i] is not NULL
                 ann->index_self = htobe16(n);
 				//ALOGI("Index self = %d\n", n);
-				__syscall(sendto(u_fd, repl, annlen, 0
+				__syswrap(sendto(u_fd, repl, annlen, 0
 	                , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in)));
 				++n;
 
@@ -304,15 +315,15 @@ void *serve_map(void *argv) {
 	while(true) {
 		sa_len = sizeof(addr_client);
 		int s_fd;
-        __syscall(s_fd = accept(t_fd, (sockaddr*)&addr_client, &sa_len));
+        __syswrap(s_fd = accept(t_fd, (sockaddr*)&addr_client, &sa_len));
 
         // Str1ker, 03.08.2018: proto convention
 		// Str1ker, 06.08.2018: optimization, lol
-		__syscall(shutdown(s_fd, SHUT_RD));
+		__syswrap(shutdown(s_fd, SHUT_RD));
 		// MSG_WAITALL гарантирует, что все данные будут отправлены без повторных recv
 		// (за исключением EINTR наверно, Илья знает)
-        __syscall(send(s_fd, &map_hdr, 4, MSG_WAITALL)); 
-        __syscall(send(s_fd, map_ptr, map_size, MSG_WAITALL));
+        __syswrap(send(s_fd, &map_hdr, 4, MSG_WAITALL)); 
+        __syswrap(send(s_fd, map_ptr, map_size, MSG_WAITALL));
         ALOGD("Map sent to client %s:%hu\n"
 			, inet_ntoa(addr_client.sin_addr), addr_client.sin_port);
 
@@ -340,7 +351,7 @@ void *state_machine(void *argv) {
 	while(true) {
 		sa_len = sizeof(addr_client);
 		ssize_t rcvd;
-        __syscall(rcvd = recvfrom(u_fd, &cl_msg, BCSDGRAM_MAX, 0, (sockaddr*)&addr_client, &sa_len));
+        __syswrap(rcvd = recvfrom(u_fd, &cl_msg, BCSDGRAM_MAX, 0, (sockaddr*)&addr_client, &sa_len));
 
 		// ignore beacons
 		if(rcvd >= 8 && be64toh(*(uint64_t*)cl_msg) == BCSBEACON_MAGIC)
@@ -519,7 +530,7 @@ int main(int argc, char **argv) {
 	socklen_t addr_size = sizeof(sockaddr_in);
 
 	// Initialize UDP socket descriptor
-    __syscall(state.sock_u = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+    __syswrap(state.sock_u = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
 
     // Setting up port number and address
     sockaddr_in addr_udp = {
@@ -530,13 +541,13 @@ int main(int argc, char **argv) {
 
     // Str1ker, 03.08.2018: reuse addr to allow server & client on the same iface
     int reuse_addr = 1;
-    __syscall(setsockopt(state.sock_u, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
+    __syswrap(setsockopt(state.sock_u, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
-    __syscall(bind(state.sock_u, (sockaddr*)&addr_udp, addr_size));
+    __syswrap(bind(state.sock_u, (sockaddr*)&addr_udp, addr_size));
 
     // Initialize TCP socket descriptor
-    __syscall(state.sock_t = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+    __syswrap(state.sock_t = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 
     // Setting up port number and address
 	sockaddr_in addr_tcp = {
@@ -545,13 +556,13 @@ int main(int argc, char **argv) {
 		, .sin_family = AF_INET
 	};
 
-	__syscall(setsockopt(state.sock_t, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
+	__syswrap(setsockopt(state.sock_t, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(reuse_addr)));
 
     // Link address with socket descriptor
-    __syscall(bind(state.sock_t, (sockaddr*)&addr_tcp, addr_size));
+    __syswrap(bind(state.sock_t, (sockaddr*)&addr_tcp, addr_size));
 
     // Run socket listenning
-    __syscall(listen(state.sock_t, LISTEN_NUM));
+    __syswrap(listen(state.sock_t, LISTEN_NUM));
 
     // Initialize thread attribute
     // Thread attribute `joinable' tells, if the system will wait for its termination
@@ -588,12 +599,12 @@ int main(int argc, char **argv) {
 	};
 	timer_t timer_id;
 	int timer_fd;
-	__syscall(timer_fd = timer_create(CLOCK_MONOTONIC, &sgv, &timer_id));
+	__syswrap(timer_fd = timer_create(CLOCK_MONOTONIC, &sgv, &timer_id));
 	struct itimerspec t_interval = { // 30 fps
 		  .it_interval = { .tv_sec = 0, .tv_nsec = 33333333 }
 		, .it_value    = { .tv_sec = 0, .tv_nsec = 33333333 }
 	};
-	__syscall(timer_settime(timer_id, 0, &t_interval, NULL));
+	__syswrap(timer_settime(timer_id, 0, &t_interval, NULL));
 
 	if (argc > 1 && strcmp(argv[1], "daemon") == 0) {
 		ALOGI("Daemonized mode\n");
@@ -661,7 +672,7 @@ int main(int argc, char **argv) {
 		printf("[$] You pressed Ctrl+D, exiting gracefully\n");
 	}
 	// TODO: graceful shutdown
-	__syscall(timer_delete(timer_id));
+	__syswrap(timer_delete(timer_id));
 	for(int i = 0; i < THREAD_SPEC_COUNT; ++i) {
 		//lassert(pthread_kill(threads[i], SIGTERM) == 0);
 		lassert(pthread_cancel(threads[i]) == 0);

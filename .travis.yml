@@ -9,12 +9,14 @@ matrix:
     before_script: 
     script: 
     - make projects tests
+    - CONFIG=wild make
     - CONFIG=release make
   - name: Clang
     env: CC=clang CC_ARCH=x64_clang
     before_script: 
     script: 
     - make projects tests
+    - CONFIG=wild make
     - CONFIG=release make
   - name: Linaro ARM
     env:
@@ -25,6 +27,7 @@ matrix:
     - tar -xf gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz --checkpoint=.100
     script:
     - make -f Makefile.ARM projects tests
+    - CONFIG=wild make make -f Makefile.ARM
     - CONFIG=release make -f Makefile.ARM
   - name: OpenWRT MIPS
     env:
@@ -36,6 +39,7 @@ matrix:
     - tar -xf lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64.tar.xz --checkpoint=.100
     script:
     - make -f Makefile.MIPS projects tests
+    - CONFIG=wild make make -f Makefile.ARM
     - CONFIG=release make -f Makefile.MIPS
 before_deploy: mkdir release && cp res/propeller.bcsmap bin && cd bin && ls -1 . | zip -9o@ ../release/bcs-$CC_ARCH.zip && cd .. && ls -1 release/*
 deploy:

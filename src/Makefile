@@ -55,3 +55,5 @@ $(targets):
 
 distclean:
 	@$(foreach dir,$(SUBDIRS),$(MAKE) -$(MKFLG)C "$(dir)" clean;)
+
+include $(BUILD_SUBSYSTEM_PATH)/help.mk
