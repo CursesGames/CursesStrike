@@ -262,18 +262,19 @@ STATIC_ASSERT(sizeof(BCSMSGREPLY) == 24);
 // эта структура - ЧАСТЬ ответа, идёт после заголовка BCSMSGREPLY
 // только в случае type == BCSREPLT_ANNOUNCE
 typedef struct __bcsmsg_announce {
-	uint16_t count; // количество записей в массивах
-// номер записи, соответствующей самому игроку
-// спасибо за идею NRshka
-	uint16_t index_self;
+// количество записей в массивах
+	uint16_t count;
 // количество пуль в анонсе
 	uint16_t count_bullets;
+// номер записи, соответствующей самому игроку
+// спасибо за идею NRshka
+	uint32_t index_self;
 // all public information
 // the very first element [0] is always the client that received the message
 // вся публичная информация о клиентах
 // самый первый элемeнт [0] всегда тот клиент, который получил сообщение
 //	BCSCLIENT_PUBLIC *public_info;
-	char _pad[2];
+	//char _pad[2];
 } BCSMSGANNOUNCE;
 STATIC_ASSERT(sizeof(BCSMSGANNOUNCE) == 8);
 
@@ -296,11 +297,11 @@ STATIC_ASSERT(sizeof(BCSBEACON) == 64);
 typedef struct __bcs_bullet {
     uint16_t x;
     uint16_t y;
-    BCSDIRECTION direction;
+	BCSDIRECTION direction;
 	uint16_t creator_id;
-	char _pad[6];
+	//char _pad[6];
 } BCSBULLET;
-STATIC_ASSERT(sizeof(BCSBULLET) == 16);
+STATIC_ASSERT(sizeof(BCSBULLET) == 12);
 
 // unified interface. good to think about it.
 extern bool bcsproto_send(int sockfd, struct sockaddr_in *client_endpoint_to, BCSMSG *msg);

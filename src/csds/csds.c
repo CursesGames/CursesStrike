@@ -259,7 +259,7 @@ void send_announces(sigval_t argv) {
 			++n;
 		}
 		// должно сойтись
-		lassert(n == player_count);
+		sassert(n == player_count);
 
 		ann->count = htobe16(player_count);
 		ann->count_bullets = htobe16(bullet_count);

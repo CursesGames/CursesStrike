@@ -472,8 +472,8 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
 	//nassert(touchwin(mappad));
 	//nassert(touchwin(mapobj));
 	// фиксим размеры: пришло время
-	int size_y = min(MAPVIEW_HEIGHT, min(h + 1, map.height));
-	int size_x = min(MAPVIEW_WIDTH, min(w + 1, map.width));
+	int size_y = min(h, map.height);
+	int size_x = min(w, map.width);
 
 	//nassert(pnoutrefresh(mappad, 0, 0, 0, 0, 0 + h, 0 + w));
 	nassert(copywin(mappad, stdscr, 0, 0, 0, 0, size_y - 1, size_x - 1, true));
@@ -510,11 +510,10 @@ void *smooth_bullets(void *argv) {
 	};
 	
 	bool need_refresh = false;
-	bool do_smoothing;
 	while(true) {
 		diff.tv_usec = do_it.tv_usec;
 		pthread_mutex_lock(&pfs->mutex_self);
-		do_smoothing = pfs->smooth_bullets;
+		bool do_smoothing = pfs->smooth_bullets;
 		// если нет пуль то нечего и сглаживать
 		if(pfs->bullets.count == 0)
 			goto unlock;
@@ -539,7 +538,7 @@ void *smooth_bullets(void *argv) {
 			timeradd(&last, &do_it, &tmp);
 			last = tmp;
 			need_refresh = true;
-			ALOGD("Smoothed\n");
+			//ALOGD("Smoothed\n");
 		}
 unlock:
 		pthread_mutex_unlock(&pfs->mutex_self);
@@ -804,8 +803,10 @@ next_epevent:
 		idx = 1;
 		printf("Enter 0 to rescan, or the number of server to connect [1]: ");
 		fflush(stdout);
-		if(fgets(buf, 256, stdin) == NULL)
+		if(fgets(buf, 256, stdin) == NULL) {
+			vector_free(&servers);
 			goto connect_leave;
+		}
 		if(buf[0] == '\n')
 			break;
 		if(sscanf(buf, "%u", &idx) == 1 && idx <= servers.size)
@@ -822,6 +823,7 @@ next_epevent:
 	BCAST_SRV_UN *srv = (BCAST_SRV_UN*)(&(servers.array[idx - 1]));
 	pfs.endpoint.sin_addr.s_addr = srv->endpoint.addr;
 	pfs.endpoint.sin_port = srv->endpoint.port;
+	vector_free(&servers);
 
 connect_to:
 	lassert(inet_ntop(AF_INET, &(pfs.endpoint.sin_addr), addrstr, INET_ADDRSTRLEN) != NULL);
@@ -1121,9 +1123,16 @@ loop_leave:
 	pthread_mutex_lock(&pfs.mutex_frame);
 	curs_set(true);
 	endwin();
+	pthread_cancel(receiver_thread);
+	pthread_join(receiver_thread, NULL);
+	pthread_cancel(thread_smoother);
+	pthread_join(thread_smoother, NULL);
 
 connect_leave:
-	vector_free(&servers);
+	if(pfs.map.map_primitives != NULL)
+		free(pfs.map.map_primitives);
+	if(pfs.bullets.array != NULL)
+		free(pfs.bullets.array);
 
 	return 0;
 }

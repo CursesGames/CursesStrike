@@ -35,10 +35,14 @@ bool bcsstatemachine_process_request(
 
     // TODO: добавить больше цветочков!
     int i;
-    BCSMSGREPLY reply; //reply to client
-    BCSBULLET *bullet;
-    reply.packet_no = msg->packet_no; // packet to send number
-    timeval128_t val_time, res;
+    BCSMSGREPLY reply = {
+		  .packet_no = msg->packet_no // packet to send number
+		, .time_gen = { // initialized now, clear?
+			  .tv_sec = 0
+			, .tv_usec = 0
+		}
+    }; //reply to client
+	timeval128_t val_time, res;
     uint16_t x, y;
     bool flag = true;
 
@@ -218,7 +222,7 @@ bool bcsstatemachine_process_request(
                     val_time.tv_usec = 333333;
                     if (timercmp(&res, &val_time, >=) == true) {
                         //ALOGI("time norm");
-                        bullet = malloc(sizeof(BCSBULLET));
+                        BCSBULLET *bullet = malloc(sizeof(BCSBULLET));
                         bullet->creator_id = id;
                         bullet->x = state->client[id].public_info.position.x;
                         bullet->y = state->client[id].public_info.position.y;
