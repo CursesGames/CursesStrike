@@ -11,28 +11,28 @@
 bool verbose = false;
 
 int syscall_print_error(const char *x, const char *file, const int line, const int err_no) {
-	if (err_no != 0) {
-		char *errstr = strerror(err_no);
-		logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST 
-			" syscall err: '%s'\n\tat %s:%d (%d = %s)\n", x, file, line, err_no, errstr);
-	}
-	else {
-		logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST 
-			" runtime err: '%s'\n\tat %s:%d\n", x, file, line);
-	}
-	return EXIT_SUCCESS;
+    if (err_no != 0) {
+        char *errstr = strerror(err_no);
+        logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST
+            " syscall err: '%s'\n\tat %s:%d (%d = %s)\n", x, file, line, err_no, errstr);
+    }
+    else {
+        logprint(ANSI_BKGRD_RED ANSI_COLOR_WHITE "[x]" ANSI_CLRST
+            " runtime err: '%s'\n\tat %s:%d\n", x, file, line);
+    }
+    return EXIT_SUCCESS;
 }
 
 int syscall_error(const char *x, const char *file, const int line) {
-	// Turn off curses mode if we have it
-	// `#define CURSES 1' is from <ncurses.h>
+    // Turn off curses mode if we have it
+    // `#define CURSES 1' is from <ncurses.h>
 #ifdef CURSES
-	endwin();
+    endwin();
 #endif
 
-	// Get errno and errstr for last syscall
-	int err_no = errno;
-	syscall_print_error(x, file, line, err_no);
-	abort();
-	return EXIT_FAILURE;
+    // Get errno and errstr for last syscall
+    int err_no = errno;
+    syscall_print_error(x, file, line, err_no);
+    abort();
+    return EXIT_FAILURE;
 }

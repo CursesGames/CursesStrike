@@ -10,8 +10,7 @@
 #define CHECK_AREA_SIZE 5  // must be odd
 #define RESPAWN_TIMER 2
 
-extern bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, 
-                                int steps);
+extern bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet, int steps);
 
 extern bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id);
 

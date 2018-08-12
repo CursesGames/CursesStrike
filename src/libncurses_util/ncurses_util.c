@@ -6,71 +6,71 @@
 #include <stdlib.h>
 
 bool ncurses_raise_error(const char *x, const char *file, const int line) {
-	endwin();
-	fflush(stdout);
-	fprintf(stdout, "[x] ncurses err: '%s' at %s:%d\n", x, file, line);
-	fprintf(stderr, "[x] ncurses err: '%s' at %s:%d\n", x, file, line);
-	exit(1);
-	return false;
+    endwin();
+    fflush(stdout);
+    fprintf(stdout, "[x] ncurses err: '%s' at %s:%d\n", x, file, line);
+    fprintf(stderr, "[x] ncurses err: '%s' at %s:%d\n", x, file, line);
+    exit(1);
+    return false;
 }
 
 chtype *create_chstr(char *str, int len, chtype attr) {
-	chtype *chstr = (chtype*)malloc(sizeof(chtype) * len + 1);
-	for(int i = 0; i < len; i++) {
-		chstr[i] = ((chtype)str[i]) | attr;
-	}
-	chstr[len] = 0;
-	return chstr;
+    chtype *chstr = (chtype*)malloc(sizeof(chtype) * len + 1);
+    for (int i = 0; i < len; i++) {
+        chstr[i] = ((chtype)str[i]) | attr;
+    }
+    chstr[len] = 0;
+    return chstr;
 }
 
 // move, add attributed string with fixed length
 int mvwaddattrfstr(WINDOW *wnd, int y, int x, int len, char *str, chtype attr) {
-	int pos = 0;
-	while(*str != '\0' && pos < len) {
-		if(wmove(wnd, y, x) == ERR) return ERR;
-		if(waddch(wnd, (*str) | attr) == ERR) return ERR;
-		str++;
-		x++;
-		pos++;
-	}
-	for(int i = pos; i < len; i++) {
-		if(wmove(wnd, y, x) == ERR) return ERR;
-		if(waddch(wnd, ' ' | attr) == ERR) return ERR; // add spaces
-		x++;
-		pos++;
-	}
-	return 0; // OK
+    int pos = 0;
+    while (*str != '\0' && pos < len) {
+        if (wmove(wnd, y, x) == ERR) return ERR;
+        if (waddch(wnd, (*str) | attr) == ERR) return ERR;
+        str++;
+        x++;
+        pos++;
+    }
+    for (int i = pos; i < len; i++) {
+        if (wmove(wnd, y, x) == ERR) return ERR;
+        if (waddch(wnd, ' ' | attr) == ERR) return ERR; // add spaces
+        x++;
+        pos++;
+    }
+    return 0; // OK
 }
 
 int32_t raw_wgetch(WINDOW *wnd) {
-	int c = wgetch(wnd);
-	//nassert(c); не ассерт
-	if(c == ERR)
-		return ERR;
-	int32_t raw_key = 0;
-	if (c == RAW_KEY_ESC) {
-		nassert(nodelay(wnd, true)); // is it safe?
-		while ((c = wgetch(wnd)) != ERR) {
-			if(!(0 <= c && c < 256))
-				abort();
-			raw_key = raw_key << 8 | c;
-		}
-		nassert(nodelay(wnd, false));
-		// if only ESC was pressed
-		if(raw_key == 0)
-			raw_key = c;
-	}
-	else {
-		raw_key = c;
-	}
-	return raw_key;
+    int c = wgetch(wnd);
+    //nassert(c); не ассерт
+    if (c == ERR)
+        return ERR;
+    int32_t raw_key = 0;
+    if (c == RAW_KEY_ESC) {
+        nassert(nodelay(wnd, true)); // is it safe?
+        while ((c = wgetch(wnd)) != ERR) {
+            if (!(0 <= c && c < 256))
+                abort();
+            raw_key = raw_key << 8 | c;
+        }
+        nassert(nodelay(wnd, false));
+        // if only ESC was pressed
+        if (raw_key == 0)
+            raw_key = c;
+    }
+    else {
+        raw_key = c;
+    }
+    return raw_key;
 }
 
 int mvwputch(WINDOW *wnd, int y, int x, chtype ch) {
-	int w, h;
-	getmaxyx(wnd, h, w);
-	if (y == h - 1 && x == w - 1)
-		return mvwinsch(wnd, y, x, ch);
-	else
-		return mvwaddch(wnd, y, x, ch);
+    int w, h;
+    getmaxyx(wnd, h, w);
+    if (y == h - 1 && x == w - 1)
+        return mvwinsch(wnd, y, x, ch);
+    else
+        return mvwaddch(wnd, y, x, ch);
 }

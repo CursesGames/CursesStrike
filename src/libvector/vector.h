@@ -22,20 +22,20 @@
 
 // Datatype for vector objects
 typedef union __vector_val_t {
-	uint64_t lng;
-	void *ptr;
+    uint64_t lng;
+    void *ptr;
 } VECTOR_VALTYPE;
 
 // A simple array-like collection with ability to grow, containing (by default) pointer-size integers
 typedef struct __vector {
-// pointer to internal array
-	VECTOR_VALTYPE *array;
-// actual count of items
-	size_t size;
-// reserved count
-	size_t capacity;
-// how many new place vector will allocate if size >= capacity
-	uint32_t _growth_factor; 
+    // pointer to internal array
+    VECTOR_VALTYPE *array;
+    // actual count of items
+    size_t size;
+    // reserved count
+    size_t capacity;
+    // how many new place vector will allocate if size >= capacity
+    uint32_t _growth_factor;
 } VECTOR;
 
 // Initializes vector, allocating memory ahead for `initial_capacity' elems

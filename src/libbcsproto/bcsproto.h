@@ -67,149 +67,151 @@ STATIC_ASSERT(sizeof(struct sockaddr_in) == 16);
 
 // unions to simplify broadcasting
 typedef union __bcast_un {
-	struct {
-		in_addr_t bcast;
-		in_addr_t mask;
-	} v4;
-	uint64_t _vval;
+    struct {
+        in_addr_t bcast;
+        in_addr_t mask;
+    } v4;
+    uint64_t _vval;
 } BCAST_UN;
 STATIC_ASSERT(sizeof(BCAST_UN) == 8);
 
 typedef union __bcast_srv_ep {
-	struct __endpoint {
-		in_addr_t addr;
-		uint16_t port;
-		uint16_t zero; // should be 0 after init
-	} endpoint;
-	uint64_t _vval;
+    struct __endpoint {
+        in_addr_t addr;
+        uint16_t port;
+        uint16_t zero; // should be 0 after init
+    } endpoint;
+    uint64_t _vval;
 } BCAST_SRV_UN;
 STATIC_ASSERT(sizeof(BCAST_SRV_UN) == 8);
 
 // structure for storing coordinates
 typedef struct __point {
-	uint16_t x;
-	uint16_t y;
+    uint16_t x;
+    uint16_t y;
 } __attribute__((packed)) POINT;
 STATIC_ASSERT(sizeof(POINT) == 4);
 
 // all possible actions that the client may request
 typedef enum __bcsaction {
-// "connect" to server and reserve slot
-	  BCSACTION_CONNECT // params: version (4 bytes), nickname
-// confirm that client got the map and ready to play
-	, BCSACTION_CONNECT2 // noparams
-// disconnect from server
-	, BCSACTION_DISCONNECT // noparams
-// move without rotation
-	, BCSACTION_MOVE // params: BCSDIRECTION
-// fire to the current direction
-	, BCSACTION_FIRE // noparams
-// rotate around without move
-	, BCSACTION_ROTATE // params: BCSDIRECTION (только LEFT или RIGHT)
-// request statistics
-	, BCSACTION_REQSTATS // noparams
+    // "connect" to server and reserve slot
+    BCSACTION_CONNECT // params: version (4 bytes), nickname
+    // confirm that client got the map and ready to play
+  , BCSACTION_CONNECT2 // noparams
+    // disconnect from server
+  , BCSACTION_DISCONNECT // noparams
+    // move without rotation
+  , BCSACTION_MOVE // params: BCSDIRECTION
+    // fire to the current direction
+  , BCSACTION_FIRE // noparams
+    // rotate around without move
+  , BCSACTION_ROTATE // params: BCSDIRECTION (только LEFT или RIGHT)
+    // request statistics
+  , BCSACTION_REQSTATS // noparams
 } BCSACTION;
 STATIC_ASSERT(sizeof(BCSACTION) == 4);
 
 // direction of the character's movement
 typedef enum __bcsdir {
-// what about BCSDIR_UNDEF?
-// some actions doesn't have direction, but what if I
-// want to be strict and disallow all unexistent directions
-// except for L, R, U, D?
-// Solution: use `BCSDIR_LEFT' where direction does not matter.
-	  BCSDIR_LEFT, BCSDIR_UNDEF = BCSDIR_LEFT
-	, BCSDIR_UP
-	, BCSDIR_RIGHT
-	, BCSDIR_DOWN
+    // what about BCSDIR_UNDEF?
+    // some actions doesn't have direction, but what if I
+    // want to be strict and disallow all unexistent directions
+    // except for L, R, U, D?
+    // Solution: use `BCSDIR_LEFT' where direction does not matter.
+    BCSDIR_LEFT
+  , BCSDIR_UNDEF = BCSDIR_LEFT
+  , BCSDIR_UP
+  , BCSDIR_RIGHT
+  , BCSDIR_DOWN
 } BCSDIRECTION;
 STATIC_ASSERT(sizeof(BCSDIRECTION) == 4);
 
 // possible types of server replies
 typedef enum __bcsreply_type {
-// на всякий случай
-	  BCSREPLT_NONE = 0
-// acknowledge - client request accepted
-	, BCSREPLT_ACK
-// negative acknowledge - client request denied
-	, BCSREPLT_NACK
-// message to client about necessity to download the map
-	, BCSREPLT_MAP
-// stats about players (ex. kills/deaths)
-	, BCSREPLT_STATS
-// send message, initiated by server, to client
-// messages of this type will be sent to each client with a server's "frame-rate" frequency
-// ANNOUNCE messages contain only a minimal set of public information (BCSCLIENT_PUBLIC)
-// we send state cause some player can be killed or be connecting
-// so, client won't draw this player
-// сообщения такого типа будут рассылаться каждому клиенту с частотой "фреймрейта" сервера
-// (скорее всего, это 30 раз в секунду)
-// сообщения ANNOUNCE содержат только минимальный набор публичной информации: 
-// расположение, направление, состояние.
-// состояние отправляем на тот хрен, что чувака могли убить, или он ещё не подключился
-// в таком случае его не нужно рисовать
-// TODO: ограничить анонс каждому клиенту его зоной видимости
-	, BCSREPLT_ANNOUNCE
-// emergency (immediate) message
-// экстренное (немедленное) сообщение
-	, BCSREPLT_EMERGENCY
-// выключение сервера
-	, BCSREPLT_SHUTDOWN
+    // на всякий случай
+    BCSREPLT_NONE = 0
+    // acknowledge - client request accepted
+  , BCSREPLT_ACK
+    // negative acknowledge - client request denied
+  , BCSREPLT_NACK
+    // message to client about necessity to download the map
+  , BCSREPLT_MAP
+    // stats about players (ex. kills/deaths)
+  , BCSREPLT_STATS
+    // send message, initiated by server, to client
+    // messages of this type will be sent to each client with a server's "frame-rate" frequency
+    // ANNOUNCE messages contain only a minimal set of public information (BCSCLIENT_PUBLIC)
+    // we send state cause some player can be killed or be connecting
+    // so, client won't draw this player
+    // сообщения такого типа будут рассылаться каждому клиенту с частотой "фреймрейта" сервера
+    // (скорее всего, это 30 раз в секунду)
+    // сообщения ANNOUNCE содержат только минимальный набор публичной информации: 
+    // расположение, направление, состояние.
+    // состояние отправляем на тот хрен, что чувака могли убить, или он ещё не подключился
+    // в таком случае его не нужно рисовать
+    // TODO: ограничить анонс каждому клиенту его зоной видимости
+  , BCSREPLT_ANNOUNCE
+    // emergency (immediate) message
+    // экстренное (немедленное) сообщение
+  , BCSREPLT_EMERGENCY
+    // выключение сервера
+  , BCSREPLT_SHUTDOWN
 } BCS_REPLY_TYPE;
 STATIC_ASSERT(sizeof(BCS_REPLY_TYPE) == 4);
 
 // possible states of client
 typedef enum __bcsclient_state {
-// error? initial state?
-	  BCSCLST_FREESLOT, BCSCLST_STANDALONE = BCSCLST_FREESLOT
-// registered on the server but downloading map, for ex. and don't receive announces
-	, BCSCLST_CONNECTING
-// receives announces but not playing, spectator mode
-	, BCSCLST_CONNECTED
-// transition from the "connected" state to the "playing" state
-// is done by sending message "FIRE"
-// переход из состояния "подключен" в состояние "играет" 
-// осуществляется посылкой сообщения "FIRE"
-// UPD. 05.08.2018: игрок переходит в это состояние немедленно
-// а свои координаты узнает из ближайшего анонса
-	, BCSCLST_PLAYING
-// dead
-	, BCSCLST_RESPAWNING
+    // error? initial state?
+    BCSCLST_FREESLOT
+  , BCSCLST_STANDALONE = BCSCLST_FREESLOT
+    // registered on the server but downloading map, for ex. and don't receive announces
+  , BCSCLST_CONNECTING
+    // receives announces but not playing, spectator mode
+  , BCSCLST_CONNECTED
+    // transition from the "connected" state to the "playing" state
+    // is done by sending message "FIRE"
+    // переход из состояния "подключен" в состояние "играет" 
+    // осуществляется посылкой сообщения "FIRE"
+    // UPD. 05.08.2018: игрок переходит в это состояние немедленно
+    // а свои координаты узнает из ближайшего анонса
+  , BCSCLST_PLAYING
+    // dead
+  , BCSCLST_RESPAWNING
 } BCSCLST;
 STATIC_ASSERT(sizeof(BCSCLST) == 4);
 
 // public information about player, server send it to ever clients with ANNOUNCE
 // публичная информация об игроке, которую сервер отсылает всем в ANNOUNCE:
 typedef struct __bcsclient_info_public {
-	BCSCLST state;
-	POINT position;
-	BCSDIRECTION direction;
-	char _pad[4];
+    BCSCLST state;
+    POINT position;
+    BCSDIRECTION direction;
+    char _pad[4];
 } BCSCLIENT_PUBLIC;
 STATIC_ASSERT(sizeof(BCSCLIENT_PUBLIC) == 16);
 
 // public information about player, which is sent only on request
 // открытая информация об игроке, которая отсылается только по запросу
 typedef struct __bcsclient_info_public_ext {
-	uint16_t frags;
-	uint16_t deaths;
-	char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
+    uint16_t frags;
+    uint16_t deaths;
+    char nickname[BCSPLAYER_NICKLEN + 1]; // 19 + '\0'
 } BCSCLIENT_PUBLIC_EXT; // aligned to 24 bytes on x64 and x86, FIXED
 STATIC_ASSERT(sizeof(BCSCLIENT_PUBLIC_EXT) == 24);
 
 // private information, only server know this
 // закрытая информация, которую о клиенте знает только сервер
 typedef struct __bcsclient_info_private {
-	// timestamp of last fire event,
-	// to limit fire rate
-	timeval128_t time_last_fire;
-	// timestamp of last received datagram, to kick on connection drop
-	timeval128_t time_last_dgram;
-	// ip address and port of client
-	struct sockaddr_in endpoint; // 16 bytes
-	// last received packet no
-	uint32_t last_packet_no;
-	char _pad[4];
+    // timestamp of last fire event,
+    // to limit fire rate
+    timeval128_t time_last_fire;
+    // timestamp of last received datagram, to kick on connection drop
+    timeval128_t time_last_dgram;
+    // ip address and port of client
+    struct sockaddr_in endpoint; // 16 bytes
+    // last received packet no
+    uint32_t last_packet_no;
+    char _pad[4];
 } BCSCLIENT_PRIVATE;
 STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 56);
 
@@ -217,89 +219,89 @@ STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 56);
 // all information about client
 // вся информация о клиенте
 typedef struct {
-	BCSCLIENT_PUBLIC public_info; // 16
-	BCSCLIENT_PUBLIC_EXT public_ext_info; // 24
-	BCSCLIENT_PRIVATE private_info; // 56
+    BCSCLIENT_PUBLIC public_info; // 16
+    BCSCLIENT_PUBLIC_EXT public_ext_info; // 24
+    BCSCLIENT_PRIVATE private_info; // 56
 } BCSCLIENT;
 STATIC_ASSERT(sizeof(BCSCLIENT) == 96);
 
 typedef union {
-	int64_t long_p;
-	struct {
-		int32_t int_lo; // первый параметр
-		int32_t int_hi; // второй параметр
-	} ints;
-	uint8_t bytes[8];
+    int64_t long_p;
+    struct {
+        int32_t int_lo; // первый параметр
+        int32_t int_hi; // второй параметр
+    } ints;
+    uint8_t bytes[8];
 } BCSMSGPARAM;
 STATIC_ASSERT(sizeof(BCSMSGPARAM) == 8);
 
 // client's message
 // сообщение, сгенерированное клиентом
 typedef struct __bcsmsg {
-// accurate to microseconds
-	timeval128_t time_gen;
-// TODO: номер может переполниться, добавить обработку такой ситуации
-	uint32_t packet_no;
-// action that the client wants to do
-	BCSACTION action;
-// additional params - 8 bytes
-	BCSMSGPARAM un;
+    // accurate to microseconds
+    timeval128_t time_gen;
+    // TODO: номер может переполниться, добавить обработку такой ситуации
+    uint32_t packet_no;
+    // action that the client wants to do
+    BCSACTION action;
+    // additional params - 8 bytes
+    BCSMSGPARAM un;
 } BCSMSG;
 STATIC_ASSERT(sizeof(BCSMSG) == 32);
 
 // базовая часть сообщения сервера
 typedef struct __bcsmsg_reply {
-// accurate to microseconds
-	timeval128_t time_gen;
-// number of packet from incoming message
-// из приходящего сообщения
-	uint32_t packet_no;
-// response type
-	BCS_REPLY_TYPE type;
+    // accurate to microseconds
+    timeval128_t time_gen;
+    // number of packet from incoming message
+    // из приходящего сообщения
+    uint32_t packet_no;
+    // response type
+    BCS_REPLY_TYPE type;
 } BCSMSGREPLY;
 STATIC_ASSERT(sizeof(BCSMSGREPLY) == 24);
 
 // эта структура - ЧАСТЬ ответа, идёт после заголовка BCSMSGREPLY
 // только в случае type == BCSREPLT_ANNOUNCE
 typedef struct __bcsmsg_announce {
-// количество записей в массивах
-	uint16_t count;
-// количество пуль в анонсе
-	uint16_t count_bullets;
-// номер записи, соответствующей самому игроку
-// спасибо за идею NRshka
-	uint32_t index_self;
-// all public information
-// the very first element [0] is always the client that received the message
-// вся публичная информация о клиентах
-// самый первый элемeнт [0] всегда тот клиент, который получил сообщение
-//	BCSCLIENT_PUBLIC *public_info;
-	//char _pad[2];
+    // количество записей в массивах
+    uint16_t count;
+    // количество пуль в анонсе
+    uint16_t count_bullets;
+    // номер записи, соответствующей самому игроку
+    // спасибо за идею NRshka
+    uint32_t index_self;
+    // all public information
+    // the very first element [0] is always the client that received the message
+    // вся публичная информация о клиентах
+    // самый первый элемeнт [0] всегда тот клиент, который получил сообщение
+    //  BCSCLIENT_PUBLIC *public_info;
+    //char _pad[2];
 } BCSMSGANNOUNCE;
 STATIC_ASSERT(sizeof(BCSMSGANNOUNCE) == 8);
 
 // structure of the broadcast message from the server
 // структура широковещательного сообщения от сервера
 typedef struct __bcs_beacon {
-// константа: BCSBEACON_MAGIC
-	uint64_t magic;
-// server port. The IP address will be automatically extracted from the broadcast message
-// порт сервера. IP адрес будет вычленен автоматически из broadcast-сообщения
-	uint16_t port;
-// версия протокола сервера, вкомпиливается в бинарник из константы BCSPROTO_VERSION
-	uint16_t proto_ver;
-// string with the human-readable name of the server
-// строка с человекочитаемым названием сервера
-	char description[BCSBEACON_DESCRLEN + 1];
+    // константа: BCSBEACON_MAGIC
+    uint64_t magic;
+    // server port. The IP address will be automatically extracted from the broadcast message
+    // порт сервера. IP адрес будет вычленен автоматически из broadcast-сообщения
+    uint16_t port;
+    // версия протокола сервера, вкомпиливается в бинарник из константы BCSPROTO_VERSION
+    uint16_t proto_ver;
+    // string with the human-readable name of the server
+    // строка с человекочитаемым названием сервера
+    char description[BCSBEACON_DESCRLEN + 1];
 } BCSBEACON;
 STATIC_ASSERT(sizeof(BCSBEACON) == 64);
 
 typedef struct __bcs_bullet {
     uint16_t x;
     uint16_t y;
-	BCSDIRECTION direction;
-	uint16_t creator_id;
-	//char _pad[6];
+    BCSDIRECTION direction;
+    uint16_t creator_id;
+    //char _pad[6];
 } BCSBULLET;
 STATIC_ASSERT(sizeof(BCSBULLET) == 12);
 
@@ -317,10 +319,8 @@ extern uint32_t bcsproto_next_packet_no;
 extern void bcsproto_new_packet(BCSMSG *msg);
 
 // this function is a clone of `sendto' for packet duplication
-extern ssize_t sendto2(
-	int fd, const void *buf, size_t n,
-	int flags, struct sockaddr *addr, socklen_t addr_len
-);
+extern ssize_t sendto2(int fd, const void *buf, size_t n, int flags, struct sockaddr *addr
+                     , socklen_t addr_len);
 
 // read EXACTLY n bytes from TCP connection
 // UPD 03.08.2018: this is already can be done by recv() with MSG_WAITALL flag

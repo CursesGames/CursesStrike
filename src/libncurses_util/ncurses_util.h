@@ -27,22 +27,22 @@
 #endif
 
 enum raw_keys {
-      RAW_KEY_ERR = -1
-    , RAW_KEY_TAB = 9
-    , RAW_KEY_ENTER = 10
-    , RAW_KEY_NUMPAD_ENTER = 343
-    , RAW_KEY_ESC = 27
-    , RAW_KEY_HOME = 0x5b317e
-    , RAW_KEY_HOME_ALT = 0x106
-    , RAW_KEY_END = 0x5b347e
-    , RAW_KEY_END_ALT = 0x168
-    , RAW_KEY_PAGE_DOWN = 0x152
-    , RAW_KEY_PAGE_UP = 0x153
-      // long long key codes
-    , RAW_KEY_F1 = 0x5b31317e
-    , RAW_KEY_F2 = 0x5b31327e
-    , RAW_KEY_F3 = 0x5b31337e
-    , RAW_KEY_F4 = 0x5b31347e
+    RAW_KEY_ERR = -1
+  , RAW_KEY_TAB = 9
+  , RAW_KEY_ENTER = 10
+  , RAW_KEY_NUMPAD_ENTER = 343
+  , RAW_KEY_ESC = 27
+  , RAW_KEY_HOME = 0x5b317e
+  , RAW_KEY_HOME_ALT = 0x106
+  , RAW_KEY_END = 0x5b347e
+  , RAW_KEY_END_ALT = 0x168
+  , RAW_KEY_PAGE_DOWN = 0x152
+  , RAW_KEY_PAGE_UP = 0x153
+    // long long key codes
+  , RAW_KEY_F1 = 0x5b31317e
+  , RAW_KEY_F2 = 0x5b31327e
+  , RAW_KEY_F3 = 0x5b31337e
+  , RAW_KEY_F4 = 0x5b31347e
 };
 
 // print error into stdout and stderr in form:

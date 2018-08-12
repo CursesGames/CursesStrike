@@ -18,55 +18,55 @@ typedef struct sockaddr sockaddr;
 // I don't bother with packing of this structure now
 // структура состояния клиента на клиенте
 typedef struct {
-	BCSCLIENT_PUBLIC self;
-	BCSCLIENT_PUBLIC_EXT self_ext;
-	struct {
-		uint16_t count;
-		uint16_t index_self;
-		BCSCLIENT_PUBLIC array[BCSSERVER_MAXCLIENTS];
-		BCSCLIENT_PUBLIC_EXT stats[BCSSERVER_MAXCLIENTS];
-	} others;
-	pthread_mutex_t mutex_self; // this struct data exclusive access
-	pthread_mutex_t mutex_frame; // ncurses view exclusive access
-	pthread_mutex_t mutex_sock; // udp socket exclusive access
-	struct sockaddr_in endpoint; // Server IP:Port
-	int sockfd; // UDP socket
-	BCSMAP map;
-	BCSMAP map_overlay;
-	WINDOW *mappad;
-	WINDOW *mapobj;
-	WINDOW *below;
-	WINDOW *stats;
-	struct {
-		uint16_t count;
-		BCSBULLET *array;
-	} bullets;
-	timeval128_t last_announce;
-	size_t frames;
-	bool redraw;
-	bool show_stats;
-	bool smooth_bullets;
+    BCSCLIENT_PUBLIC self;
+    BCSCLIENT_PUBLIC_EXT self_ext;
+    struct {
+        uint16_t count;
+        uint16_t index_self;
+        BCSCLIENT_PUBLIC array[BCSSERVER_MAXCLIENTS];
+        BCSCLIENT_PUBLIC_EXT stats[BCSSERVER_MAXCLIENTS];
+    } others;
+    pthread_mutex_t mutex_self; // this struct data exclusive access
+    pthread_mutex_t mutex_frame; // ncurses view exclusive access
+    pthread_mutex_t mutex_sock; // udp socket exclusive access
+    struct sockaddr_in endpoint; // Server IP:Port
+    int sockfd; // UDP socket
+    BCSMAP map;
+    BCSMAP map_overlay;
+    WINDOW *mappad;
+    WINDOW *mapobj;
+    WINDOW *below;
+    WINDOW *stats;
+    struct {
+        uint16_t count;
+        BCSBULLET *array;
+    } bullets;
+    timeval128_t last_announce;
+    size_t frames;
+    bool redraw;
+    bool show_stats;
+    bool smooth_bullets;
 } BCSPLAYER_FULL_STATE;
 
 // структура состояния сервера = состояние клиентов на сервере
 typedef struct {
-// тупой статический массив на столько слотов, на сколько можем
-// при инициализации нужно закатать нулями, 
-// тогда state и endpoint будут как у свободного слота
-	BCSCLIENT client[BCSSERVER_MAXCLIENTS];
-	pthread_mutex_t mutex_self; // this struct data exclusive access
-	pthread_mutex_t mutex_sock; // main udp socket exclusive access
-	int sock_u; // main UDP socket descriptor
-	int sock_t; // TCP socket
-	VECTOR sock_b; // vector of broadcast sockets
-	BCSMAP map;
-// объекты изменившие вид карты: разрушенные ящики, пули могут храниться здесь
-	BCSMAP map_overlay;
-	LINKED_LIST bullets;
-// количество фреймов сервера, для статистики какой-нибудь
-	size_t frames;
-// текущее количество подключенных клиентов, чтобы каждый раз не гонять массив
-	uint16_t player_count;
+    // тупой статический массив на столько слотов, на сколько можем
+    // при инициализации нужно закатать нулями, 
+    // тогда state и endpoint будут как у свободного слота
+    BCSCLIENT client[BCSSERVER_MAXCLIENTS];
+    pthread_mutex_t mutex_self; // this struct data exclusive access
+    pthread_mutex_t mutex_sock; // main udp socket exclusive access
+    int sock_u; // main UDP socket descriptor
+    int sock_t; // TCP socket
+    VECTOR sock_b; // vector of broadcast sockets
+    BCSMAP map;
+    // объекты изменившие вид карты: разрушенные ящики, пули могут храниться здесь
+    BCSMAP map_overlay;
+    LINKED_LIST bullets;
+    // количество фреймов сервера, для статистики какой-нибудь
+    size_t frames;
+    // текущее количество подключенных клиентов, чтобы каждый раз не гонять массив
+    uint16_t player_count;
 } BCSSERVER_FULL_STATE;
 
 // что должна делать эта функция?
@@ -84,8 +84,8 @@ typedef struct {
 // Критическая секция с заблокированным mutex_self должна работать максимально быстро.
 // Вернуть true если запрос возможен и выполнен, иначе false.
 extern bool bcsstatemachine_process_request(
-	  BCSSERVER_FULL_STATE *state
-	, sockaddr_in *src
-	, BCSMSG *msg
-	, ssize_t msglen
+    BCSSERVER_FULL_STATE *state
+  , sockaddr_in *src
+  , BCSMSG *msg
+  , ssize_t msglen
 );

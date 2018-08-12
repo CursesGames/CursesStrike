@@ -10,8 +10,8 @@
 #include <stddef.h>
 
 typedef union {
-	uint64_t lng;
-	void *ptr;
+    uint64_t lng;
+    void *ptr;
 } LIST_VALTYPE;
 
 // Double-linked list with fake node, counter and end pointer
@@ -20,15 +20,15 @@ typedef union {
 // Take random: O(n)
 // Iterate over all: O(n)
 typedef struct __linked_list_entry {
-	struct __linked_list_entry *prev;
-	struct __linked_list_entry *next;
-	LIST_VALTYPE value;
+    struct __linked_list_entry *prev;
+    struct __linked_list_entry *next;
+    LIST_VALTYPE value;
 } LINKED_LIST_ENTRY;
 
 typedef struct __linked_list {
-	LINKED_LIST_ENTRY *head;
-	LINKED_LIST_ENTRY *tail;
-	size_t count;
+    LINKED_LIST_ENTRY *head;
+    LINKED_LIST_ENTRY *tail;
+    size_t count;
 } LINKED_LIST;
 
 void linkedlist_init(LINKED_LIST *dcl);
@@ -40,4 +40,4 @@ LIST_VALTYPE *linkedlist_throw(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur);
 LIST_VALTYPE *linkedlist_next_r(LINKED_LIST *dcl, LINKED_LIST_ENTRY **cur);
 LIST_VALTYPE *linkedlist_at(LINKED_LIST *dcl, size_t index);
 
-void linkedlist_quick_sort(LINKED_LIST *dcl, int(*comparator)(LIST_VALTYPE*, LIST_VALTYPE*));
+void linkedlist_quick_sort(LINKED_LIST *dcl, int (*comparator)(LIST_VALTYPE *, LIST_VALTYPE *));

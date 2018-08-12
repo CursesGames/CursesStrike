@@ -8,8 +8,8 @@
 #include "../libbcsstatemachine/bcsstatemachine.h"
 
 uint16_t return_clients_size(BCSSERVER_FULL_STATE *state);
-int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg);
+int add_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg);
 int search_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client);
-int delete_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client);
+int delete_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client);
 void log_print_cl_info(BCSSERVER_FULL_STATE *state);
 bool isFree(BCSSERVER_FULL_STATE *state, uint16_t x, uint16_t y);

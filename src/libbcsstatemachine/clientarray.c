@@ -11,14 +11,14 @@
 
 // Not in mutex because it's often called in other functions that are already in mutex
 // !!! When call this function separately take it in mutex
-bool isFree(BCSSERVER_FULL_STATE *state, uint16_t x, uint16_t y){
+bool isFree(BCSSERVER_FULL_STATE *state, uint16_t x, uint16_t y) {
     int i;
 
-    for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
+    for (i = 0; i < BCSSERVER_MAXCLIENTS; i++) {
         if ((state->client[i].public_info.state != BCSCLST_FREESLOT)
             && (state->client[i].public_info.state != BCSCLST_RESPAWNING)
             && (state->client[i].public_info.position.y == y)
-            && (state->client[i].public_info.position.x == x)){
+            && (state->client[i].public_info.position.x == x)) {
             return false;
         }
     }
@@ -38,7 +38,7 @@ uint16_t return_clients_size(BCSSERVER_FULL_STATE *state) {
 }
 
 // Put client data into array
-int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg) {
+int add_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BCSMSG *cl_msg) {
     timeval128_t tv;
     char *nick;
     int i;
@@ -46,10 +46,10 @@ int add_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client, BC
 
     pthread_mutex_lock(&state->mutex_self);
     if (be32toh(cl_msg->un.ints.int_lo) == BCSPROTO_VERSION) {
-        for (i = 0; i < BCSSERVER_MAXCLIENTS; i++){
-            if ((state->client[i].public_info.state) == BCSCLST_FREESLOT){
+        for (i = 0; i < BCSSERVER_MAXCLIENTS; i++) {
+            if ((state->client[i].public_info.state) == BCSCLST_FREESLOT) {
                 state->client[i].private_info.endpoint = *addr_client; // client endpoint
-                __syswrap(gettimeofday(&(state->client[i].private_info.time_last_dgram), NULL)); 
+                __syswrap(gettimeofday(&(state->client[i].private_info.time_last_dgram), NULL));
                 state->client[i].public_info.state = BCSCLST_CONNECTING; // init state = wait for map
                 state->client[i].public_info.direction = BCSDIR_UP; // init direction
                 num = i;
@@ -80,7 +80,7 @@ int search_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) 
     pthread_mutex_lock(&state->mutex_self);
     for (i = 0; i < BCSSERVER_MAXCLIENTS; i++) {
         if ((state->client[i].public_info.state != BCSCLST_FREESLOT)
-            && (state->client[i].private_info.endpoint.sin_addr.s_addr == addr_client->sin_addr.s_addr) 
+            && (state->client[i].private_info.endpoint.sin_addr.s_addr == addr_client->sin_addr.s_addr)
             && (state->client[i].private_info.endpoint.sin_port == addr_client->sin_port)) {
             num = i;
             break;
@@ -92,10 +92,10 @@ int search_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) 
 }
 
 // Remove client from array
-int delete_client (BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) {
+int delete_client(BCSSERVER_FULL_STATE *state, struct sockaddr_in *addr_client) {
     int num;
 
-    if((num = search_client(state, addr_client)) == -1){
+    if ((num = search_client(state, addr_client)) == -1) {
         return -1;
     }
     pthread_mutex_lock(&state->mutex_self);
@@ -111,13 +111,13 @@ void log_print_cl_info(BCSSERVER_FULL_STATE *state) {
     int i;
 
     pthread_mutex_lock(&state->mutex_self);
-    for(i = 0; i < BCSSERVER_MAXCLIENTS; i++){
-        if(state->client[i].public_info.state != BCSCLST_FREESLOT){
+    for (i = 0; i < BCSSERVER_MAXCLIENTS; i++) {
+        if (state->client[i].public_info.state != BCSCLST_FREESLOT) {
             ALOGD("CLIENT %d\n", i);
             //public info 
             ALOGD("state: %d\n", state->client[i].public_info.state);
-            ALOGD("position: x = %u, y = %u\n", 
-                (unsigned int)state->client[i].public_info.position.x, 
+            ALOGD("position: x = %u, y = %u\n",
+                (unsigned int)state->client[i].public_info.position.x,
                 (unsigned int)state->client[i].public_info.position.y);
             ALOGI("direction: %d\n", state->client[i].public_info.direction);
             //public ext info
@@ -125,19 +125,17 @@ void log_print_cl_info(BCSSERVER_FULL_STATE *state) {
             ALOGI("deaths: %u\n", (unsigned int)(state->client[i].public_ext_info.deaths));
             ALOGI("nickname: %s\n", state->client[i].public_ext_info.nickname);
             //private info
-            ALOGI("endpoint : family = %d, port = %d, address = %s\n", 
-                state->client[i].private_info.endpoint.sin_family, 
-                state->client[i].private_info.endpoint.sin_port, 
+            ALOGI("endpoint : family = %d, port = %d, address = %s\n",
+                state->client[i].private_info.endpoint.sin_family,
+                state->client[i].private_info.endpoint.sin_port,
                 inet_ntoa(state->client[i].private_info.endpoint.sin_addr));
-            ALOGI("last fire time: %ld.%06ld\n", 
-                state->client[i].private_info.time_last_fire.tv_sec, 
+            ALOGI("last fire time: %ld.%06ld\n",
+                state->client[i].private_info.time_last_fire.tv_sec,
                 state->client[i].private_info.time_last_fire.tv_usec);
-            ALOGI("last dgram time: %ld.%06ld\n", 
-                state->client[i].private_info.time_last_dgram.tv_sec, 
+            ALOGI("last dgram time: %ld.%06ld\n",
+                state->client[i].private_info.time_last_dgram.tv_sec,
                 state->client[i].private_info.time_last_dgram.tv_usec);
         }
     }
     pthread_mutex_unlock(&state->mutex_self);
 }
-
-
