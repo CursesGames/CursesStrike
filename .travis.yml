@@ -1,5 +1,5 @@
 git:
-  depth: 1
+  depth: 3
   quiet: true
 sudo: false
 matrix:
@@ -8,15 +8,17 @@ matrix:
     env: CC=gcc CC_ARCH=x64_gcc
     before_script: 
     script: 
-    - make projects tests
+    - CONFIG=debug make projects tests
     - CONFIG=wild make
+    - CONFIG=prerelease make
     - CONFIG=release make
   - name: Clang
     env: CC=clang CC_ARCH=x64_clang
     before_script: 
     script: 
-    - make projects tests
+    - CONFIG=debug make projects tests
     - CONFIG=wild make
+    - CONFIG=prerelease make
     - CONFIG=release make
   - name: Linaro ARM
     env:
@@ -26,8 +28,9 @@ matrix:
     - wget -nv http://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/arm-linux-gnueabihf/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz
     - tar -xf gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz --checkpoint=.100
     script:
-    - make -f Makefile.ARM projects tests
+    - CONFIG=debug make -f Makefile.ARM projects tests
     - CONFIG=wild make -f Makefile.ARM
+    - CONFIG=prerelease make -f Makefile.ARM
     - CONFIG=release make -f Makefile.ARM
   - name: OpenWRT MIPS
     env:
@@ -38,8 +41,9 @@ matrix:
     - wget -nv https://downloads.openwrt.org/releases/17.01.4/targets/ar71xx/generic/lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64.tar.xz
     - tar -xf lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64.tar.xz --checkpoint=.100
     script:
-    - make -f Makefile.MIPS projects tests
+    - CONFIG=debug make -f Makefile.MIPS projects tests
     - CONFIG=wild make -f Makefile.MIPS
+    - CONFIG=prerelease make -f Makefile.MIPS
     - CONFIG=release make -f Makefile.MIPS
 before_deploy: mkdir release && cp res/propeller.bcsmap bin && cd bin && ls -1 . | zip -9o@ ../release/bcs-$CC_ARCH.zip && cd .. && ls -1 release/*
 deploy:
@@ -53,7 +57,7 @@ deploy:
     tags: true
     all_branches: true
 notifications:
-  webhooks: 
+  webhooks:
     urls:
       - https://ultibot.ru/services/traviswh/
       - http://ec2-18-184-120-18.eu-central-1.compute.amazonaws.com/services/traviswh/

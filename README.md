@@ -15,7 +15,8 @@ How to build:
 - Clone this repo
 - `cd` to root directory of this repo
 - `make help` will give you some help
-- `make` if you want debugging symbols, OR
+- `CONFIG=debug make` if you want the most debuggable output, OR
+- `CONFIG=prerelease make` if you want release with debugging symbols __(this is the default)__, OR
 - `CONFIG=release make` to make release, OR
 - `CONFIG=wild make` to make wild release with the smallest size
 - Executables are in `bin` subdirectory
