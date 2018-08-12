@@ -35,31 +35,31 @@ bool bcsstatemachine_process_request(
 
     // TODO: добавить больше цветочков!
     int i;
-    BCSMSGREPLY reply = {
-        .packet_no = msg->packet_no // packet to send number
-      , .time_gen = {
-            // initialized now, clear?
-            .tv_sec = 0
-          , .tv_usec = 0
-        }
-    }; //reply to client
     timeval128_t val_time, res;
+    timeval128_t now;
     uint16_t x, y;
     bool flag = true;
+
+    __syswrap(gettimeofday(&now, NULL));
+
+    BCSMSGREPLY reply = {
+        .packet_no = msg->packet_no // packet to send number
+      , .time_gen = now
+    }; //reply to client
 
     pthread_mutex_lock(&state->mutex_self);
     int u_fd = state->sock_u; // copy descriptor from state 
     if (id != -1) {
-        __syswrap(gettimeofday(&state->client[id].private_info.time_last_dgram, NULL));
+        state->client[id].private_info.time_last_dgram = now;
     }
     pthread_mutex_unlock(&state->mutex_self);
 
     switch (be32toh(msg->action)) {
-        case BCSACTION_CONNECT: // client sent CONNECT; 
+        case BCSACTION_CONNECT: { // client sent CONNECT; 
             switch (id) {
                     //ONLY IF THERE IS NO SUCH CLIENT IN ARRAY
-                case -1:
-                    ALOGW("received CONNECT from client\n");
+                case -1: {
+                    ALOGD("received CONNECT from client\n");
                     // Add client to array
                     //pthread_mutex_lock(&state->mutex_self);
                     id = add_client(state, src, msg);
@@ -76,26 +76,29 @@ bool bcsstatemachine_process_request(
                             break;
                     }
                     //pthread_mutex_unlock(&state->mutex_self);
-                    reply.packet_no = msg->packet_no;
                     __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                         0, (sockaddr*)src, sizeof(sockaddr_in)));
                     break;
+                }
 
-                default:
+                default: {
                     // игрок может вернуться на то же место, если совпадает порт
                     pthread_mutex_lock(&state->mutex_self);
                     reply.type = htobe32(BCSREPLT_MAP);
-                    reply.packet_no = msg->packet_no;
                     __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                         0, (sockaddr*)src, sizeof(sockaddr_in)));
                     pthread_mutex_unlock(&state->mutex_self);
                     break;
+                }
             }
             break;
+        }
 
-        case BCSACTION_CONNECT2: // client sent CONNECT2
-            ALOGW("received CONNECT2 from client\n");
+        case BCSACTION_CONNECT2: { // client sent CONNECT2, obviously
+            ALOGD("received CONNECT2 from client\n");
             pthread_mutex_lock(&state->mutex_self);
+            // сначала мне не понравился этот иф, но потом я подумал:
+            // может, игрок будет переходить в спектаторы как раз отправив CONNECT2?
             if ((state->client[id].public_info.state == BCSCLST_CONNECTING)
                 || (state->client[id].public_info.state == BCSCLST_PLAYING)
                 || (state->client[id].public_info.state == BCSCLST_RESPAWNING)) {
@@ -107,35 +110,46 @@ bool bcsstatemachine_process_request(
                 flag = false;
             }
             pthread_mutex_unlock(&state->mutex_self);
-            reply.packet_no = msg->packet_no;
             __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                 0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
+        }
 
-        case BCSACTION_DISCONNECT:
-            ALOGW("received DISCONNECT from client\n");
+        case BCSACTION_DISCONNECT: {
+            ALOGD("received DISCONNECT from client\n");
             //pthread_mutex_lock(&state->mutex_self);
             delete_client(state, src);
             //pthread_mutex_unlock(&state->mutex_self);
             reply.type = htobe32(BCSREPLT_ACK);
-            reply.packet_no = msg->packet_no;
             __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                 0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
+        }
 
-        case BCSACTION_MOVE:
+        case BCSACTION_MOVE: {
             if (id == -1) {
                 flag = false;
                 break;
             }
-            ALOGW("received MOVE from client\n");
+            ALOGD("received MOVE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch (state->client[id].public_info.state) {
-                case BCSCLST_PLAYING:
+                case BCSCLST_PLAYING: {
+                    state->client[id].private_info.time_last_activity = now;
+                    // decline move request if too fast
+                    timersub(&now, &state->client[id].private_info.time_last_move, &res);
+                    val_time.tv_sec = 0;
+                    val_time.tv_usec = BCSGP_MOVE_TIMEBOUND;
+                    if(timercmp(&res, &val_time, <)) {
+                        // пока ещё нельзя двигаться
+                        ALOGV("MOVE declined\n");
+                        flag = false;
+	                    break;
+                    }
                     x = state->client[id].public_info.position.x;
                     y = state->client[id].public_info.position.y;
                     switch (be32toh(msg->un.ints.int_lo)) {
-                        case BCSDIR_LEFT:
+                        case BCSDIR_LEFT: {
                             if ((x != 0)
                                 && ((state->map.map_primitives[y * state->map.width + (x - 1)]) ==
                                     PUNIT_OPEN_SPACE)
@@ -146,8 +160,9 @@ bool bcsstatemachine_process_request(
                                 flag = false;
                             }
                             break;
+                        }
 
-                        case BCSDIR_RIGHT:
+                        case BCSDIR_RIGHT: {
                             if ((x != (state->map.width - 1))
                                 && ((state->map.map_primitives[y * state->map.width + (x + 1)]) ==
                                     PUNIT_OPEN_SPACE)
@@ -158,8 +173,9 @@ bool bcsstatemachine_process_request(
                                 flag = false;
                             }
                             break;
+                        }
 
-                        case BCSDIR_UP:
+                        case BCSDIR_UP: {
                             if ((y != 0)
                                 && ((state->map.map_primitives[(y - 1) * state->map.width + x]) ==
                                     PUNIT_OPEN_SPACE)
@@ -170,8 +186,9 @@ bool bcsstatemachine_process_request(
                                 flag = false;
                             }
                             break;
+                        }
 
-                        case BCSDIR_DOWN:
+                        case BCSDIR_DOWN: {
                             if ((y != (state->map.height - 1))
                                 && ((state->map.map_primitives[(y + 1) * state->map.width + x]) ==
                                     PUNIT_OPEN_SPACE)
@@ -182,51 +199,66 @@ bool bcsstatemachine_process_request(
                                 flag = false;
                             }
                             break;
+                        }
 
-                        default:
+                        default: {
                             flag = false;
                             break;
+                        }
+                    }
+                    if(flag) { // успешное перемещение
+                        state->client[id].private_info.time_last_move = now;
                     }
                     break;
+                }
 
-                case BCSCLST_CONNECTING:
+                case BCSCLST_CONNECTED: { // спектатор
+                    // хотя их-то можно кикнуть только за разрыв соединения, лол
+                    break;
+                }
+
+                case BCSCLST_CONNECTING: {
                     reply.type = htobe32(BCSREPLT_NACK);
-                    reply.packet_no = msg->packet_no;
                     __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                         0, (sockaddr*)src, sizeof(sockaddr_in)));
                     flag = false;
                     break;
+                }
 
-                default:
+                default: {
                     flag = false;
                     break;
+                }
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
+        }
 
-        case BCSACTION_FIRE:
+        case BCSACTION_FIRE: {
             if (id == -1) {
                 flag = false;
                 break;
             }
-            ALOGW("received FIRE from client\n");
+            ALOGD("received FIRE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch (state->client[id].public_info.state) {
-                case BCSCLST_CONNECTED:
+                case BCSCLST_CONNECTED: {
                     // более логично сначала установить время, а только после изменить статус
                     // и вообще, время выстрела изначально 0, так что можно обойтись
                     //__syscall(gettimeofday(&(state->client[id].private_info.time_last_fire), NULL));
+                    state->client[id].private_info.time_last_activity = now;
                     state->client[id].public_info.state = BCSCLST_RESPAWNING;
                     //bcsgameplay_respawn(state, id);
                     break;
+                }
 
-                case BCSCLST_PLAYING:
-                    __syswrap(gettimeofday(&val_time, NULL));
-                    timersub(&val_time, &state->client[id].private_info.time_last_fire, &res);
+                case BCSCLST_PLAYING: {
+                    state->client[id].private_info.time_last_activity = now;
+                    timersub(&now, &state->client[id].private_info.time_last_fire, &res);
                     //ALOGI("res time: %ld.%06ld\n", res.tv_sec, res.tv_usec);
                     val_time.tv_sec = 0;
-                    val_time.tv_usec = 333333;
-                    if (timercmp(&res, &val_time, >=) == true) {
+                    val_time.tv_usec = BCSGP_FIRE_CALMDOWN;
+                    if (timercmp(&res, &val_time, >=)) {
                         //ALOGI("time norm");
                         BCSBULLET *bullet = malloc(sizeof(BCSBULLET));
                         bullet->creator_id = id;
@@ -235,91 +267,108 @@ bool bcsstatemachine_process_request(
                         bullet->direction = state->client[id].public_info.direction;
                         LIST_VALTYPE val = { .ptr = bullet };
                         linkedlist_push_back(&state->bullets, val);
-                        __syswrap(gettimeofday(&state->client[id].private_info.time_last_fire, NULL));
+                        state->client[id].private_info.time_last_fire = now;
                     }
                     else {
+                        ALOGV("FIRE declined\n");
                         flag = false;
                     }
                     break;
+                }
 
-                case BCSCLST_CONNECTING:
+                case BCSCLST_CONNECTING: {
                     reply.type = htobe32(BCSREPLT_NACK);
-                    reply.packet_no = msg->packet_no;
                     __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                         0, (sockaddr*)src, sizeof(sockaddr_in)));
                     flag = false;
                     break;
+                }
 
-                default:
+                default: {
                     flag = false;
                     break;
+                }
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
+        }
 
-        case BCSACTION_ROTATE:
+        case BCSACTION_ROTATE: {
             if (id == -1) {
                 flag = false;
                 break;
             }
-            ALOGW("received ROTATE from client\n");
+            ALOGD("received ROTATE from client\n");
             pthread_mutex_lock(&state->mutex_self);
             switch (state->client[id].public_info.state) {
-                case BCSCLST_PLAYING:
+                case BCSCLST_PLAYING: {
                     switch (be32toh(msg->un.ints.int_lo)) {
-                        case BCSDIR_RIGHT:
-                            state->client[id].public_info.direction = (state->client[id].
-                                                                       public_info.direction + 1) % 4;
+                        case BCSDIR_RIGHT: {
+                            state->client[id].public_info.direction = 
+		                        (state->client[id].public_info.direction + 1) % 4;
                             break;
+                        }
 
-                        case BCSDIR_LEFT:
-                            state->client[id].public_info.direction = (state->client[id].
-                                                                       public_info.direction + 3) % 4;
+                        case BCSDIR_LEFT: {
+                            state->client[id].public_info.direction = 
+		                        (state->client[id].public_info.direction + 3) % 4;
                             break;
+                        }
 
-                        default:
+                        default: {
                             flag = false;
                             break;
+                        }
                     }
                     break;
+                }
 
-                case BCSCLST_CONNECTING:
+                case BCSCLST_CONNECTING: {
                     reply.type = htobe32(BCSREPLT_NACK);
-                    reply.packet_no = msg->packet_no;
                     __syswrap(sendto(u_fd, &reply, sizeof(BCSMSGREPLY),
                         0, (sockaddr*)src, sizeof(sockaddr_in)));
                     flag = false;
                     break;
+                }
 
-                default:
+                default: {
                     flag = false;
                     break;
+                }
             }
             pthread_mutex_unlock(&state->mutex_self);
             break;
+        }
 
-        case BCSACTION_REQSTATS:
-            ALOGW("received REQSTATS from client\n");
+        case BCSACTION_REQSTATS: {
+            ALOGD("received REQSTATS from client\n");
             uint16_t player_count = return_clients_size(state);
             // доступ к state->bullets.count, ставим мьютекс...
+            int index_self = search_client(state, src);
+            if(index_self == -1) { // если статистику запросил аноним
+                index_self = UINT16_MAX;
+            }
             pthread_mutex_lock(&state->mutex_self);
-            uint16_t bullets_count = state->bullets.count;
+            uint16_t bullets_count = (uint16_t)state->bullets.count;
 
             BCSMSGREPLY *stats_to_send = alloca(
-                sizeof(BCSMSGREPLY)
+                  sizeof(BCSMSGREPLY)
                 + sizeof(BCSMSGANNOUNCE)
                 + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count
             );
 
             stats_to_send->type = htobe32(BCSREPLT_STATS);
             stats_to_send->packet_no = msg->packet_no;
-            //__syscall(gettimeofday(&(stats_to_send->time_gen), NULL));
+            __syswrap(gettimeofday(&(stats_to_send->time_gen), NULL));
 
             BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(stats_to_send + 1);
             ann->count = htobe16(player_count);
             ann->count_bullets = htobe16(bullets_count);
+            ann->_zero = 0; // valgrind
+            ann->index_self = index_self;
 
-            size_t annlen = sizeof(BCSMSGREPLY)
+            size_t annlen = 
+		          sizeof(BCSMSGREPLY)
                 + sizeof(BCSMSGANNOUNCE)
                 + sizeof(BCSCLIENT_PUBLIC_EXT) * player_count;
 
@@ -330,7 +379,7 @@ bool bcsstatemachine_process_request(
                     array->frags = htobe16(state->client[i].public_ext_info.frags);
                     array->deaths = htobe16(state->client[i].public_ext_info.deaths);
                     strncpy(array->nickname, state->client[i].public_ext_info.nickname
-                          , BCSPLAYER_NICKLEN + 1);
+                          , BCSPLAYER_NICKLEN);
                     array++;
                 }
             }
@@ -338,11 +387,17 @@ bool bcsstatemachine_process_request(
             __syswrap(sendto(u_fd, stats_to_send, annlen,
                 0, (sockaddr*)src, sizeof(sockaddr_in)));
             break;
+        }
 
-        default:
+        case BCSACTION_KEEPALIVE: {
+            state->client[id].private_info.time_last_activity = now;
+            break;
+        }
+
+        default: {
             flag = false;
             break;
-
+        }
     }
 
     return flag;

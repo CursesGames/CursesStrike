@@ -279,6 +279,9 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
         end_area = (spawn_coordinate_y + CHECK_AREA_SIZE) * width +
             (spawn_coordinate_x + CHECK_AREA_SIZE); // end check area
 
+        // Str1ker, 13.08.2018: попытка пофиксить выход за границы массива.
+        end_area = min(end_area, width * height - 1);
+
         if (map_overlay_copy[spawn_coordinate_y * width + spawn_coordinate_x]
             != PUNIT_OPEN_SPACE) {
             // check

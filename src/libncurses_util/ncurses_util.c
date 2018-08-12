@@ -71,6 +71,5 @@ int mvwputch(WINDOW *wnd, int y, int x, chtype ch) {
     getmaxyx(wnd, h, w);
     if (y == h - 1 && x == w - 1)
         return mvwinsch(wnd, y, x, ch);
-    else
-        return mvwaddch(wnd, y, x, ch);
+    return mvwaddch(wnd, y, x, ch);
 }

@@ -85,7 +85,7 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
     struct ifaddrs *ifap_head;
     __syswrap(getifaddrs(&ifap_head));
     struct ifaddrs *ifap = ifap_head;
-    lassert(vector_init(ipv4_faces, BCSIFACES_APPROX));
+    sassert(vector_init(ipv4_faces, BCSIFACES_APPROX));
     while (ifap != NULL) {
         if (ifap->ifa_addr != NULL
             && ifap->ifa_addr->sa_family == AF_INET
@@ -93,23 +93,23 @@ size_t init_broadcast_receiver(VECTOR *ipv4_faces) {
         ) {
             ALOGD("iface: %s\n", ifap->ifa_name);
             ifaddr = ((struct sockaddr_in*)ifap->ifa_addr)->sin_addr.s_addr;
-            lassert(inet_ntop(AF_INET, &ifaddr, addrstr, INET_ADDRSTRLEN));
+            sassert(inet_ntop(AF_INET, &ifaddr, addrstr, INET_ADDRSTRLEN));
             ALOGD("addr: %s\t", addrstr);
             un.v4.mask = ((struct sockaddr_in*)ifap->ifa_netmask)->sin_addr.s_addr;
-            lassert(inet_ntop(AF_INET, &(un.v4.mask), addrstr, INET_ADDRSTRLEN));
+            sassert(inet_ntop(AF_INET, &(un.v4.mask), addrstr, INET_ADDRSTRLEN));
             logprint("mask: %s\t", addrstr);
 
             un.v4.bcast = ((struct sockaddr_in*)ifap->ifa_ifu.ifu_broadaddr)->sin_addr.s_addr;
             if ((ifaddr | (~(un.v4.mask))) != un.v4.bcast) {
                 logprint(ANSI_BKGRD_BRIGHT_RED ANSI_COLOR_WHITE);
             }
-            lassert(inet_ntop(AF_INET, &un.v4.bcast, addrstr, INET_ADDRSTRLEN));
+            sassert(inet_ntop(AF_INET, &un.v4.bcast, addrstr, INET_ADDRSTRLEN));
             logprint("bcast: %s\t", addrstr);
             logprint(ANSI_CLRST);
 
             // add to vector
             VECTOR_VALTYPE vval = { .lng = un._vval };
-            lassert(vector_push_back(ipv4_faces, vval));
+            sassert(vector_push_back(ipv4_faces, vval));
             count++;
 
             logprint("\n");
@@ -137,7 +137,9 @@ void *receiver_func(void *argv) {
 
     while (true) {
         bool need_redraw = true;
+        pthread_mutex_lock(&pfs->mutex_sock);
         ssize_t rcvd = recvfrom(sock, buf, BCSDGRAM_MAX, 0, (sockaddr*)&src, &sa_len);
+        pthread_mutex_unlock(&pfs->mutex_sock);
         if (rcvd == -1) {
             if (errno == EAGAIN) {
                 // no announces from server
@@ -285,6 +287,7 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
                 case PUNIT_OPEN_SPACE:
                     nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
                     // winch puts char under cursor, while waddch adjusts cursor
+                    // now we (and you too) can use my nice function mvputch()!
                     // we want to leave this cell transparent
                     //nassert(mvwinsch(pad, i, j, ' '));
                     nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
@@ -323,9 +326,8 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
 void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
     BCSMSG msg = {
         .action = htobe32(action)
-      , .un.long_p = 0
+      , .un.lng = 0
     };
-
 
     pthread_mutex_lock(&pfs->mutex_self);
     BCSCLST state = pfs->self.state;
@@ -404,8 +406,19 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
     //pthread_mutex_unlock(&pfs->mutex_self);
 
     // repaint from scratch every 30 frames?
-    if ((frames % 60) == 0)
+    if ((frames % 60) == 0) {
         nassert(clearok(stdscr, true));
+        // yes, this is not the best place to send packets
+        // but someday I will split the code of client into logical parts.
+        // If it will be still interesting for me...
+        BCSMSG msg = {
+            .action = BCSACTION_KEEPALIVE
+          , .un.lng = 0 // nothing to say
+        };
+        bcsproto_new_packet(&msg);
+        // don't mind if our packets are sent/delivered or not
+        sendto2(pfs->sockfd, &msg, sizeof(BCSMSG), 0, (sockaddr*)&pfs->endpoint, sizeof(sockaddr_in));
+    }
     //nassert(touchwin(stdscr));
     //nassert(touchwin(mapobj));
     nassert(werase(stdscr));
@@ -468,9 +481,13 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
         }
     }
 
-    if (pfs->smooth_bullets)
+    if (pfs->smooth_bullets) {
         nassert(mvwaddstr(stdscr, h - 1, 0, "SMOOTH"));
+    }
+
     pthread_mutex_unlock(&pfs->mutex_self);
+
+    // Finally, mutex is unlocked, and we are doing windows composition.
 
     // copy a part of pad
     // первые два параметра - верхний левый угол pad, с которого берём
@@ -719,7 +736,7 @@ start_bcast_scan:
     vector_free(&ifaces);
 
     VECTOR servers;
-    lassert(vector_init(&servers, BCSSERVERS_APPROX));
+    sassert(vector_init(&servers, BCSSERVERS_APPROX));
     uint32_t number = 0;
     timeval128_t tv_last, tv_now, tv_diff;
     __syswrap(gettimeofday(&tv_last, NULL));
@@ -736,7 +753,7 @@ start_bcast_scan:
             exit(EXIT_FAILURE);
         }
         // ret should be = 1
-        lassert(ret == 1);
+        sassert(ret == 1);
         struct sockaddr_in srv_sin;
         socklen_t sa_len = sizeof(srv_sin);
 
@@ -782,8 +799,8 @@ start_bcast_scan:
             }
 
             VECTOR_VALTYPE vval = { .lng = srv_new._vval };
-            lassert(vector_push_back(&servers, vval));
-            lassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
+            sassert(vector_push_back(&servers, vval));
+            sassert(inet_ntop(AF_INET, &srv_sin.sin_addr, addrstr, INET_ADDRSTRLEN));
             printf("\t%s:%hu\t%.*s - %u\n"
                  , addrstr, srv_new.endpoint.port, BCSBEACON_DESCRLEN, beacon->description
                  , number + 1
@@ -808,7 +825,7 @@ start_bcast_scan:
     close(epollfd);
 
     // if we are there, then servers.size > 0?
-    lassert(servers.size > 0);
+    sassert(servers.size > 0);
     uint32_t idx;
     while (true) {
         idx = 1;
@@ -837,7 +854,7 @@ start_bcast_scan:
     vector_free(&servers);
 
 connect_to:
-    lassert(inet_ntop(AF_INET, &(pfs.endpoint.sin_addr), addrstr, INET_ADDRSTRLEN) != NULL);
+    sassert(inet_ntop(AF_INET, &(pfs.endpoint.sin_addr), addrstr, INET_ADDRSTRLEN) != NULL);
     ALOGI("Connecting to %s:%hu\n", addrstr, pfs.endpoint.sin_port);
 
     // inverse port once
@@ -879,7 +896,7 @@ connect_to:
         }
 
         bcsproto_new_packet(msg);
-        lassert(sendto(pfs.sockfd, msg, connect_len, 0
+        sassert(sendto(pfs.sockfd, msg, connect_len, 0
           , (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == connect_len);
         rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
         if (rcvd == -1) {
@@ -947,7 +964,7 @@ connect_to:
 
     while (true) {
         bcsproto_new_packet(msg);
-        lassert(sendto(pfs.sockfd, msg, sizeof(BCSMSG), 0
+        sassert(sendto(pfs.sockfd, msg, sizeof(BCSMSG), 0
           , (sockaddr*)&pfs.endpoint, sizeof(pfs.endpoint)) == sizeof(BCSMSG));
         rcvd = recvfrom(pfs.sockfd, buf, BCSDGRAM_MAX, 0, (sockaddr*)&sin_src, &src_alen);
         if (rcvd == -1) {
@@ -1036,13 +1053,19 @@ connect_to:
 
     init_map(&pfs.mappad, &pfs.map);
 
+    pthread_attr_t attr;
+    sassert(pthread_attr_init(&attr) == 0);
+    sassert(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) == 0);
+
     pthread_t thread_smoother;
     sassert(pthread_create(&thread_smoother, NULL, smooth_bullets, &pfs) == 0);
 
     pthread_t receiver_thread;
-    sassert(pthread_create(&receiver_thread, NULL, receiver_func, &pfs) == 0);
+    sassert(pthread_create(&receiver_thread, &attr, receiver_func, &pfs) == 0);
 
     bool has_pressed = false;
+    //VECTOR pressed_keys;
+    //vector_init(&pressed_keys, 5);
     while (true) {
         /////////////////////////
         //      ОТРИСОВКА      //
@@ -1055,12 +1078,43 @@ connect_to:
         /////////////////////////
         //         ВВОД        //
         /////////////////////////
-        //nassert(nodelay(stdscr, true));
         int32_t key = raw_wgetch(stdscr);
+        //int32_t key = wgetch(stdscr);
+        //pthread_mutex_lock(&pfs.mutex_frame);
+        has_pressed = true;
+        //VECTOR_VALTYPE vt;
+        //vt.lng = key;
+        //vector_push_back(&pressed_keys, vt);
+        //nassert(nodelay(stdscr, true));
+        
+        //while(true) {
+        //    key = wgetch(stdscr);
+        //    if(key == ERR)
+	    //        break;
+            
+        //    vt.lng = key;
+        //    vector_push_back(&pressed_keys, vt);
+        //}
+        //nassert(nodelay(stdscr, false));
+
+        //pthread_mutex_unlock(&pfs.mutex_frame);
+
+        //ALOGD("Queued input: (size=%lu) ", pressed_keys.size);
+        //for(size_t i = 0; i < pressed_keys.size; ++i) {
+        //    logprint("%08x ", (uint32_t)pressed_keys.array[i].lng);
+        //}
+        //logprint("\n");
+        //fflush(stderr);
+
+        // пока что очищаем вектор
+        //vector_clear_fast(&pressed_keys);
+
+        // пускаем только первую клавишу...
+        //switch (pressed_keys.array[0].lng) {
         switch (key) {
-                /////////////////////////
-                //       ОБРАБОТКА     //
-                /////////////////////////
+            /////////////////////////
+            //       ОБРАБОТКА     //
+            /////////////////////////
 
             case 0x3: // Ctrl+C
             case KEY_F(10): // F10
@@ -1138,27 +1192,30 @@ connect_to:
                 break;
         }
         if (has_pressed) {
+            // be more responsible. 75 msec is too much
             usleep(75000);
-            // skip key press queue
-            //nodelay(stdscr, true);
-            //while(true) {
-            //  if(wgetch(stdscr) == ERR)
-            //      break;
-            //}
-            //nodelay(stdscr, false);
+            //usleep(10000);
             nassert(flushinp());
         }
     }
 
 loop_leave:
+    pthread_mutex_lock(&pfs.mutex_self);
     // don't quit until frame is not drawn
     pthread_mutex_lock(&pfs.mutex_frame);
-    curs_set(true);
-    endwin();
-    pthread_cancel(receiver_thread);
-    pthread_join(receiver_thread, NULL);
-    pthread_cancel(thread_smoother);
-    pthread_join(thread_smoother, NULL);
+    nassert(curs_set(true));
+    nassert(endwin());
+    // wait for receiver to finish
+    pthread_mutex_lock(&pfs.mutex_sock);
+    sassert(pthread_cancel(receiver_thread) == 0);
+    //sassert(pthread_join(receiver_thread, NULL) == 0);
+    // wait for smoother to finish
+    sassert(pthread_cancel(thread_smoother) == 0);
+    sassert(pthread_join(thread_smoother, NULL) == 0);
+
+    sassert(pthread_attr_destroy(&attr) == 0);
+    fflush(stderr);
+    fclose(stderr);
 
 connect_leave:
     if (pfs.map.map_primitives != NULL)
