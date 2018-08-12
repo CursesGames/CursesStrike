@@ -46,8 +46,6 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
     uint8_t tmp_primitive; 
     uint8_t* map_overlay_copy = state->map_overlay.map_primitives;
 
-    memcpy(map_overlay_copy, state->map_overlay.map_primitives, height * width);
-
     switch (bullet->direction) {
         case BCSDIR_LEFT:                                                       // y - constant, x can move at negative direction 
             line_size = width * bullet_y;
