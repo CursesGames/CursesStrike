@@ -39,14 +39,16 @@ typedef struct __vector {
 } VECTOR;
 
 // Initializes vector, allocating memory ahead for `initial_capacity' elems
-bool vector_init(VECTOR *vect, size_t initial_capacity);
+extern bool vector_init(VECTOR *vect, size_t initial_capacity);
 // Pushes `value' to the end of vector. Value is _copied_.
-bool vector_push_back(VECTOR *vect, VECTOR_VALTYPE value);
+extern bool vector_push_back(VECTOR *vect, VECTOR_VALTYPE value);
 // Copies value from the end of vector and decrement size
-bool vector_pop_back(VECTOR *vect, VECTOR_VALTYPE *out_value);
+extern bool vector_pop_back(VECTOR *vect, VECTOR_VALTYPE *out_value);
 // Cut unoccupied memory
-bool vector_shrink_to_fit(VECTOR *vect);
+extern bool vector_shrink_to_fit(VECTOR *vect);
 // Returns pointer to array of items
-VECTOR_VALTYPE *vector_array_ptr(VECTOR *vect);
+extern VECTOR_VALTYPE *vector_array_ptr(VECTOR *vect);
+// Makes vector zero size, without really cleaning up
+extern void vector_clear_fast(VECTOR *vect);
 // Free memory (without zeroing out size and capacity)
-void vector_free(VECTOR *vect);
+extern void vector_free(VECTOR *vect);

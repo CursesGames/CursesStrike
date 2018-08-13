@@ -41,8 +41,8 @@
 #define THREAD_UDP_MAIN 0
 #define THREAD_UDP_BCAST 1
 #define THREAD_TCP_MAP 2
-//#define THREAD_UDP_ANNOUNCE 3
-#define THREAD_SPEC_COUNT 3
+#define THREAD_UDP_ANNOUNCE 3
+#define THREAD_SPEC_COUNT 4
 
 // WARNING: this is a workaround for dumb C libraries like musl
 typedef union sigval sigval_t;
@@ -86,12 +86,11 @@ void *send_broadcast(void *argv) {
           , .sin_port = htobe16(BCSSERVER_BCAST_PORT)
           , .sin_family = AF_INET
         };
-        memset(&sin.sin_zero, 0, sizeof(sin.sin_zero));
         iface->broadcast_fd = sock;
         iface->bc_addr = sin;
 
         VECTOR_VALTYPE val = { .ptr = iface };
-        lassert(vector_push_back(ifaces, val));
+        sassert(vector_push_back(ifaces, val));
 
         ALOGD("Beacons will be sent to %s:%hu\n", inet_ntoa(sin.sin_addr), be16toh(sin.sin_port));
 
@@ -102,7 +101,7 @@ void *send_broadcast(void *argv) {
     freeifaddrs(ifaddr_head);
 
     if (ifaces->size > 0) {
-        lassert(vector_shrink_to_fit(ifaces));
+        //sassert(vector_shrink_to_fit(ifaces));
     }
     else {
         ALOGW("You have no broadcast interfaces, connect only by IP:Port\n");
@@ -142,156 +141,195 @@ stop_broadcast:
 }
 
 /* Thread[1] function - send announces to clients */
-void send_announces(sigval_t argv) {
+void *send_announces(void *argv) {
     // извлекаем полное состояние
-    BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)(argv.sival_ptr);
-
-    // берём снимок состояния и работаем над ним
-    // 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
-    // за это время другой поток может сделать с состоянием что-нибудь важное
-    pthread_mutex_lock(&state->mutex_self);
+    BCSSERVER_FULL_STATE *state = (BCSSERVER_FULL_STATE*)argv;
     int u_fd = state->sock_u;
-    uint16_t player_count = state->player_count;
-    bcsgameplay_map_overlay_create(state);
-    if (state->bullets.count > 0) {
-        LINKED_LIST_ENTRY *lle = NULL;
-        LIST_VALTYPE *bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
-        // overlay the latest state snapshot changes on the map
-        // (TODO) accounting for the destruction of boxes
-        // now only the position of clients is taken into account 
-        while (bullet_ptr != NULL) {
-            // tornem, commit faster, oh pleeease
-            // yeeees, yeees, i'm here
-            // bullet_ptr->ptr is a pointer to BULLET structure
-            // there will be something like:
-            if (!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
-                free(bullet_ptr->ptr);
-                bullet_ptr = linkedlist_throw(&state->bullets, &lle);
-            }
-            else {
-                bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
-            }
-        }
-    }
-    // после обработки пуль количество могло измениться
-    uint16_t bullet_count = state->bullets.count;
-    BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
-    ++(state->frames);
-    memcpy(state_snap, state->client, sizeof(state->client));
+    int sig;
+    sigset_t set;
+    __syswrap(sigemptyset(&set));
+    __syswrap(sigaddset(&set, SIGALRM));
 
-    // https://www.viva64.com/ru/w/v505/
-    // Do not call the alloca() function inside loops
-    BCSMSGREPLY *repl = alloca(
-        sizeof(BCSMSGREPLY)
-        + sizeof(BCSMSGANNOUNCE)
-        + sizeof(BCSCLIENT_PUBLIC) * player_count
-        + sizeof(BCSBULLET) * bullet_count
-    );
-    BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
-    BCSCLIENT_PUBLIC *array = (BCSCLIENT_PUBLIC*)(ann + 1);
-    BCSBULLET *array_bullet = (BCSBULLET*)(array + player_count);
-
-    LIST_VALTYPE *lv;
-    LINKED_LIST_ENTRY *lle = NULL;
-    int n = 0;
-    while ((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
-        array_bullet[n] = *((BCSBULLET*)lv->ptr);
-        // convert to BE
-        array_bullet[n].creator_id = htobe16(array_bullet[n].creator_id);
-        array_bullet[n].direction = htobe32(array_bullet[n].direction);
-        array_bullet[n].x = htobe16(array_bullet[n].x);
-        array_bullet[n].y = htobe16(array_bullet[n].y);
-        ++n;
-    }
-    // респануть игроков и кикнуть неактивных
-    timeval128_t now;
-    __syswrap(gettimeofday(&now, NULL));
-    timeval128_t kick_deadline = now;
-    kick_deadline.tv_sec -= 60; // allow 60 sec of inactivity
-    for (uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
-        if (state->client[i].public_info.state != BCSCLST_FREESLOT
-            && timercmp(&kick_deadline, &state->client[i].private_info.time_last_dgram, >=)) {
-            // kick
-            ALOGI("Kicked %s (id = %u) for inactivity.\n"
-              , state->client[i].public_ext_info.nickname, i);
-            --(state->player_count);
-            memset(&state->client[i], 0, sizeof(BCSCLIENT));
-            continue;
+    while(true) {
+        // ждём пока нас пробудит системный таймер
+        while(true) {
+            __syswrap(sigwait(&set, &sig));
+            if(sig == SIGALRM)
+	            break;
         }
-        if (state->client[i].public_info.state == BCSCLST_RESPAWNING) {
-            //ALOGD("Now: %lu.%lu, spawn at %lu.%lu"
-            //  , now.tv_sec, now.tv_usec
-            //  , state->client[i].private_info.time_last_fire.tv_sec
-            //  , state->client[i].private_info.time_last_fire.tv_usec
-            //);
-            if (timercmp(&now, &state->client[i].private_info.time_last_fire, >=)) {
-                // state is respawning, nothing bad would happen
-                lassert(bcsgameplay_respawn(state, i));
-                ALOGD("SPAWN OF %u DONE!!!\n", i);
+
+        pthread_mutex_lock(&state->mutex_self);
+        uint16_t player_count = state->player_count;
+        // в соответствии с конвенцией libbcsgameplay, нужно создавать overlay перед использованием
+        bcsgameplay_map_overlay_create(state);
+        if (state->bullets.count > 0) {
+            LINKED_LIST_ENTRY *lle = NULL;
+            LIST_VALTYPE *bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
+            // overlay the latest state snapshot changes on the map
+            // (TODO) accounting for the destruction of boxes
+            // now only the position of clients is taken into account 
+            while (bullet_ptr != NULL) {
+                // tornem, commit faster, oh pleeease
+                // yeeees, yeees, i'm here
+                // bullet_ptr->ptr is a pointer to BULLET structure
+                // there will be something like:
+                if (!bcsgameplay_bullet_step(state, bullet_ptr->ptr, BCSBULLET_SPEED)) {
+                    free(bullet_ptr->ptr);
+                    bullet_ptr = linkedlist_throw(&state->bullets, &lle);
+                }
+                else {
+                    bullet_ptr = linkedlist_next_r(&state->bullets, &lle);
+                }
             }
         }
-    }
-    pthread_mutex_unlock(&state->mutex_self);
+        // после обработки пуль количество могло измениться
+        uint16_t bullet_count = state->bullets.count;        
+        ++(state->frames);
 
-    repl->type = htobe32(BCSREPLT_ANNOUNCE);
+        if (player_count > 0) {
+            // https://www.viva64.com/ru/w/v505/
+            // Do not call the alloca() function inside loops
+            // эх, всё-таки маллок
+            BCSMSGREPLY *repl = malloc(
+                  sizeof(BCSMSGREPLY)
+                + sizeof(BCSMSGANNOUNCE)
+                + sizeof(BCSCLIENT_PUBLIC) * player_count
+                + sizeof(BCSBULLET) * bullet_count
+            );
+            BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
+            BCSCLIENT_PUBLIC *array = (BCSCLIENT_PUBLIC*)(ann + 1);
+            BCSBULLET *array_bullet = (BCSBULLET*)(array + player_count);
 
-    if (player_count > 0) {
-        BCSCLIENT_PUBLIC *arr_ptr = array;
-        n = 0;
-        // lookup all slots
-        // include only registered (non-empty slots)
-        // send to actively interacting
-        for (int i = 0; i < CLIENTS_NUM; i++) {
-            BCSCLIENT *cl_ptr = &state_snap[i];
-            // include only registered (non-empty slots), this slot is empty
-            if (cl_ptr->public_info.state == BCSCLST_STANDALONE)
-                continue;
-
-            // copy struct
-            *arr_ptr = cl_ptr->public_info;
-            // convert to BE
-            arr_ptr->direction = htobe32(arr_ptr->direction);
-            arr_ptr->position.x = htobe16(arr_ptr->position.x);
-            arr_ptr->position.y = htobe16(arr_ptr->position.y);
-            arr_ptr->state = htobe32(arr_ptr->state);
-
-            ++arr_ptr;
-            ++n;
-        }
-        // должно сойтись
-        sassert(n == player_count);
-
-        ann->count = htobe16(player_count);
-        ann->count_bullets = htobe16(bullet_count);
-        size_t annlen = sizeof(BCSMSGREPLY)
-            + sizeof(BCSMSGANNOUNCE)
-            + sizeof(BCSCLIENT_PUBLIC) * player_count
-            + sizeof(BCSBULLET) * bullet_count;
-        // для прикола проштампуем пакет
-        bcsproto_new_packet((BCSMSG*)repl);
-        n = 0;
-        // lookup all slots
-        for (int i = 0; i < CLIENTS_NUM; i++) {
-            BCSCLIENT *cl_ptr = &state_snap[i];
-            // assume that state machine is OK
-            // and none of these states possible without good endpoint
-            // send to actively interacting
-            if (
-                cl_ptr->public_info.state == BCSCLST_CONNECTED
-                || cl_ptr->public_info.state == BCSCLST_PLAYING
-                || cl_ptr->public_info.state == BCSCLST_RESPAWNING
-            ) {
-                // if clients[i] is not NULL
-                ann->index_self = htobe16(n);
-                //ALOGI("Index self = %d\n", n);
-                __syswrap(sendto(u_fd, repl, annlen, 0
-                  , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in)));
+            LIST_VALTYPE *lv;
+            LINKED_LIST_ENTRY *lle = NULL;
+            int n = 0;
+            // увы, список пуль просто так не скопировать...
+            // придётся формировать массив во время заблокированного состояния
+            // и надеяться, что процессор на сервере достаточно быстрый
+            while ((lv = linkedlist_next_r(&state->bullets, &lle)) != NULL) {
+                array_bullet[n] = *((BCSBULLET*)lv->ptr);
+                // convert to BE
+                array_bullet[n].creator_id = htobe16(array_bullet[n].creator_id);
+                array_bullet[n].direction = htobe32(array_bullet[n].direction);
+                array_bullet[n].x = htobe16(array_bullet[n].x);
+                array_bullet[n].y = htobe16(array_bullet[n].y);
+                array_bullet[n]._zero = 0; // valgrind
                 ++n;
-
             }
+            // респануть игроков и кикнуть неактивных
+            timeval128_t now;
+            __syswrap(gettimeofday(&now, NULL));
+            timeval128_t kick_deadline = now;
+            kick_deadline.tv_sec -= BCSGP_KICK_TIMEOUT; 
+            timeval128_t spec_deadline = now;
+            spec_deadline.tv_sec -= BCSGP_SPEC_TIMEOUT; 
+            for (uint16_t i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
+                if (state->client[i].public_info.state != BCSCLST_FREESLOT) {
+                    if(timercmp(&kick_deadline, &state->client[i].private_info.time_last_dgram, >=)) {
+                        // kick for connection interruption
+                        ALOGI("Kicked %s (id = %u) for connection interruption.\n"
+                          , state->client[i].public_ext_info.nickname, i);
+                        --(state->player_count);
+                        --player_count;
+                        memset(&state->client[i], 0, sizeof(BCSCLIENT));
+                        continue;
+                    }
+                    if(state->client[i].public_info.state == BCSCLST_PLAYING
+		                && 
+		               timercmp(&spec_deadline, &state->client[i].private_info.time_last_activity, >=))
+                    {
+                        // kick for doing nothing, with fine connection
+                        ALOGI("Moved %s (id = %u) to spectators for inactivity.\n"
+                          , state->client[i].public_ext_info.nickname, i);
+                        state->client[i].public_info.state = BCSCLST_CONNECTED;
+                        continue;
+                    }
+                    if (state->client[i].public_info.state == BCSCLST_RESPAWNING
+                    && timercmp(&now, &state->client[i].private_info.time_last_fire, >=)) {
+
+                        // state is respawning, nothing bad would happen
+                        sassert(bcsgameplay_respawn(state, i));
+                        state->client[i].private_info.time_last_move = now;
+                        ALOGD("SPAWN OF %u DONE!!!\n", i);
+                        //continue;
+                    }
+                }
+            }
+
+            // берём снимок состояния и работаем над ним
+            // 0х600 байт скопируются значительно быстрее чем мы будем их ворошить
+            // за это время другой поток может сделать с состоянием что-нибудь важное
+            BCSCLIENT state_snap[BCSSERVER_MAXCLIENTS];
+            memcpy(state_snap, state->client, sizeof(state->client));
+            pthread_mutex_unlock(&state->mutex_self);
+
+            repl->type = htobe32(BCSREPLT_ANNOUNCE);
+
+            BCSCLIENT_PUBLIC *arr_ptr = array;
+            n = 0;
+            // lookup all slots
+            // include only registered (non-empty slots)
+            // send to actively interacting
+            for (int i = 0; i < CLIENTS_NUM; i++) {
+                BCSCLIENT *cl_ptr = &state_snap[i];
+                // include only registered (non-empty slots), this slot is empty
+                if (cl_ptr->public_info.state == BCSCLST_STANDALONE)
+                    continue;
+
+                // copy struct
+                *arr_ptr = cl_ptr->public_info;
+                // convert to BE
+                arr_ptr->direction = htobe32(arr_ptr->direction);
+                arr_ptr->position.x = htobe16(arr_ptr->position.x);
+                arr_ptr->position.y = htobe16(arr_ptr->position.y);
+                arr_ptr->state = htobe32(arr_ptr->state);
+
+                ++arr_ptr;
+                ++n;
+            }
+            // должно сойтись
+            sassert(n == player_count);
+
+            ann->count = htobe16(player_count);
+            ann->count_bullets = htobe16(bullet_count);
+            ann->_zero = 0;
+            size_t annlen = sizeof(BCSMSGREPLY)
+                + sizeof(BCSMSGANNOUNCE)
+                + sizeof(BCSCLIENT_PUBLIC) * player_count
+                + sizeof(BCSBULLET) * bullet_count;
+            // для прикола проштампуем пакет
+            bcsproto_new_packet((BCSMSG*)repl);
+            n = 0;
+            // lookup all slots
+            for (int i = 0; i < CLIENTS_NUM; i++) {
+                BCSCLIENT *cl_ptr = &state_snap[i];
+                // assume that state machine is OK
+                // and none of these states possible without good endpoint
+                // send to actively interacting
+                if (
+                    cl_ptr->public_info.state == BCSCLST_CONNECTED
+                    || cl_ptr->public_info.state == BCSCLST_PLAYING
+                    || cl_ptr->public_info.state == BCSCLST_RESPAWNING
+                ) {
+                    // if clients[i] is not NULL
+                    ann->index_self = htobe16(n);
+                    //ALOGI("Index self = %d\n", n);
+                    __syswrap(sendto(u_fd, repl, annlen, 0
+                      , (sockaddr*)&(cl_ptr->private_info.endpoint), sizeof(sockaddr_in)));
+                    ++n;
+
+                }
+            }
+            free(repl);
+        }
+        else {
+            // если нет игроков, просто разблокировать мьютекс
+            pthread_mutex_unlock(&state->mutex_self);
         }
     }
-    pthread_cancel(pthread_self());
+
+    // ReSharper disable once CppUnreachableCode
+    return NULL;
 }
 
 void *serve_map(void *argv) {
@@ -300,13 +338,15 @@ void *serve_map(void *argv) {
 
     // At this moment, we suppose that struct includes:
     // width (2 bytes), height (2 bytes) and the pointer to primitives
+    STATIC_ASSERT(offsetof(BCSMAP, width) == 0);
+    STATIC_ASSERT(offsetof(BCSMAP, height) == 2);
 
     char map_hdr[4];
     pthread_mutex_lock(&state->mutex_self);
     int t_fd = state->sock_t; // copy descriptor from state
     // жоская адресная арифметика, на деле просто копируем размеры в big-endian
     *(uint16_t*)map_hdr = htobe16(state->map.width);
-    *(uint16_t*)(map_hdr + 2) = htobe16(state->map.height);
+    *(uint16_t*)(map_hdr + sizeof(state->map.width)) = htobe16(state->map.height);
     uint8_t *map_ptr = state->map.map_primitives;
     size_t map_size = state->map.width * state->map.height;
     pthread_mutex_unlock(&state->mutex_self);
@@ -321,12 +361,11 @@ void *serve_map(void *argv) {
         // Str1ker, 03.08.2018: proto convention
         // Str1ker, 06.08.2018: optimization, lol
         __syswrap(shutdown(s_fd, SHUT_RD));
-        // MSG_WAITALL гарантирует, что все данные будут отправлены без повторных recv
+        // MSG_WAITALL гарантирует, что все данные будут отправлены без повторных send
         // (за исключением EINTR наверно, Илья знает)
         __syswrap(send(s_fd, &map_hdr, 4, MSG_WAITALL));
         __syswrap(send(s_fd, map_ptr, map_size, MSG_WAITALL));
-        ALOGD("Map sent to client %s:%hu\n"
-          , inet_ntoa(addr_client.sin_addr), addr_client.sin_port);
+        ALOGD("Map sent to client %s:%hu\n", inet_ntoa(addr_client.sin_addr), addr_client.sin_port);
 
         close(s_fd);
     }
@@ -373,31 +412,58 @@ void *state_machine(void *argv) {
 void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
     const char dirchar[] = { '<', '^', '>', 'v' };
     pthread_mutex_lock(&state->mutex_self);
+    timeval128_t now;
+    __syswrap(gettimeofday(&now, NULL));
     fprintf(f, "Client slots:\n");
     for (int i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
         BCSCLIENT *cl = &state->client[i];
         fprintf(f, "Slot #%d: ", i);
         switch (cl->public_info.state) {
-            case BCSCLST_FREESLOT: fprintf(f, "FREESLOT");
+            case BCSCLST_FREESLOT: {
+                fprintf(f, "FREESLOT");
                 break;
-            case BCSCLST_CONNECTING: fprintf(f, "CONNECTING");
+            }
+            case BCSCLST_CONNECTING: {
+                fprintf(f, "CONNECTING");
                 break;
-            case BCSCLST_CONNECTED: fprintf(f, "CONNECTED");
+            }
+            case BCSCLST_CONNECTED: {
+                fprintf(f, "CONNECTED");
                 break;
-            case BCSCLST_PLAYING: fprintf(f, "PLAYING");
+            }
+            case BCSCLST_PLAYING: {
+                fprintf(f, "PLAYING");
                 break;
-            case BCSCLST_RESPAWNING: fprintf(f, "RESPAWNING");
+            }
+            case BCSCLST_RESPAWNING: {
+                fprintf(f, "RESPAWNING");
                 break;
+            }
         }
-        fprintf(f, "(%u), (%hu, %hu), %c (%u)\n", cl->public_info.state
+        fprintf(f, "(%u), (%hu, %hu), %c (%u), nick '%s', %hu:%hu\n"
+		      , cl->public_info.state
               , cl->public_info.position.x, cl->public_info.position.y
-              , dirchar[cl->public_info.direction], cl->public_info.direction);
+              , dirchar[cl->public_info.direction], cl->public_info.direction
+		      , cl->public_ext_info.nickname
+              , cl->public_ext_info.frags, cl->public_ext_info.deaths
+		);
 
-        fprintf(f, "\tNickname = '%s', %hu:%hu\n", cl->public_ext_info.nickname
-              , cl->public_ext_info.frags, cl->public_ext_info.deaths);
-        fprintf(f, "\t%s:%hu, seq = %u, (timers hidden)\n"
+        fprintf(f, "\t%s:%hu, seq = %u, timers:\n"
               , inet_ntoa(cl->private_info.endpoint.sin_addr)
-              , cl->private_info.endpoint.sin_port, cl->private_info.last_packet_no);
+              , cl->private_info.endpoint.sin_port, cl->private_info.last_packet_no
+		);
+
+        timeval128_t t_dgram, t_move, t_fire, t_activity;
+        timersub(&cl->private_info.time_last_dgram, &now, &t_dgram);
+        timersub(&cl->private_info.time_last_move, &now, &t_move);
+        timersub(&cl->private_info.time_last_fire, &now, &t_fire);
+        timersub(&cl->private_info.time_last_activity, &now, &t_activity);
+        fprintf(f, "\tdgram: %ld.%06lu, move: %ld.%06lu, fire: %ld.%06lu, act: %ld.%06lu\n"
+		    , t_dgram.tv_sec, t_dgram.tv_usec
+            , t_move.tv_sec,  t_move.tv_usec
+            , t_fire.tv_sec,  t_fire.tv_usec
+		    , t_activity.tv_sec, t_activity.tv_usec
+		);
     }
     fprintf(f, "Bullet objects: %lu\n", state->bullets.count);
     LIST_VALTYPE *lv;
@@ -416,13 +482,22 @@ void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
         for (uint16_t x = 0; x < map.width; ++x) {
             char c;
             switch ((BCSMAPPRIMITIVE)(map.map_primitives[y * map.width + x])) {
-                case PUNIT_ROCK: c = '#';
+                case PUNIT_ROCK: {
+                    c = '#';
                     break;
-                case PUNIT_WATER: c = '~';
+                }
+                case PUNIT_WATER: {
+                    c = '~';
                     break;
-                case PUNIT_BOX: c = 'X';
+                }
+                case PUNIT_BOX: {
+                    c = 'X';
                     break;
-                default: c = ' ';
+                }
+                default: {
+                    c = ' ';
+                    break;
+                }
             }
             map_xray[y * map.width + x] = c;
         }
@@ -451,10 +526,16 @@ void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
         char c = map_xray[bullet.y * map.width + bullet.x];
         char d = ' ';
         switch (bullet.direction) {
-            case BCSDIR_LEFT: case BCSDIR_RIGHT: d = '-';
+            case BCSDIR_LEFT: 
+            case BCSDIR_RIGHT: {
+                d = '-';
                 break;
-            case BCSDIR_UP: case BCSDIR_DOWN: d = '|';
+            }
+            case BCSDIR_UP:
+            case BCSDIR_DOWN: {
+                d = '|';
                 break;
+            }
         }
         if (c == ' ')
             map_xray[bullet.y * map.width + bullet.x] = d;
@@ -483,8 +564,7 @@ void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
 
 int main(int argc, char **argv) {
     pthread_t threads[THREAD_SPEC_COUNT];
-    pthread_attr_t attr[THREAD_SPEC_COUNT]; //thread attribute
-    pthread_attr_t attr_timer;
+    pthread_attr_t attr_joinable; //thread attribute
 
     // до того, как мы не начали создавать потоки
     // за доступ к state можно не опасаться
@@ -510,7 +590,7 @@ int main(int argc, char **argv) {
 
     // clients array nullification
     memset(&state.client, 0, sizeof(state.client));
-    lassert(vector_init(&state.sock_b, BC_FD_NUM));
+    sassert(vector_init(&state.sock_b, BC_FD_NUM));
     linkedlist_init(&state.bullets);
 
     // map loading
@@ -580,39 +660,37 @@ int main(int argc, char **argv) {
     // Kramarenko said that some systems do not have this attribute by default
     // What if he lied?
 
+    // Str1ker, 13.08.2018: create one announce thread and call him maybe
+    sigset_t set;
+    __syswrap(sigemptyset(&set));
+    __syswrap(sigaddset(&set, SIGALRM));
+    __syswrap(sigprocmask(SIG_BLOCK, &set, NULL));
+
     // Str1ker, 06.08.2018
+    // Str1ker, 13.08.2018: use attribute multiple times
+    sassert(pthread_attr_init(&attr_joinable) == 0);
+    sassert(pthread_attr_setdetachstate(&attr_joinable, PTHREAD_CREATE_JOINABLE) == 0);
     // create thread for current map serving
-    pthread_attr_init(&attr[THREAD_TCP_MAP]);
-    pthread_attr_setdetachstate(&attr[THREAD_TCP_MAP], PTHREAD_CREATE_JOINABLE);
-    lassert(pthread_create(&threads[THREAD_TCP_MAP], &attr[THREAD_TCP_MAP], serve_map, &state) == 0);
+    sassert(pthread_create(&threads[THREAD_TCP_MAP], &attr_joinable, serve_map, &state) == 0);
 
     // create thread for our great state machine!
-    pthread_attr_init(&attr[THREAD_UDP_MAIN]);
-    pthread_attr_setdetachstate(&attr[THREAD_UDP_MAIN], PTHREAD_CREATE_JOINABLE);
-    lassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr[THREAD_UDP_MAIN], state_machine, &state) == 0
-    );
+    sassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr_joinable, state_machine, &state) == 0);
 
     // create thread for broadcast
-    pthread_attr_init(&attr[THREAD_UDP_BCAST]);
-    pthread_attr_setdetachstate(&attr[THREAD_UDP_BCAST], PTHREAD_CREATE_JOINABLE);
-    lassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr[THREAD_UDP_BCAST], send_broadcast, &state.
-        sock_b) == 0);
+    sassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr_joinable, send_broadcast, &state.sock_b) == 0);
 
     // create thread for announces
-    pthread_attr_init(&attr_timer);
-    pthread_attr_setdetachstate(&attr_timer, PTHREAD_CREATE_DETACHED);
     // Str1ker, 06.08.2018: replace thread to system monotonic clock timer
-    //lassert(pthread_create(&threads[THREAD_UDP_ANNOUNCE], &attr, send_announces, &state) == 0);
+    // Str1ker, 13.08.2018: call thread with SIGALRM with system realtime timer
+    sassert(pthread_create(&threads[THREAD_UDP_ANNOUNCE], &attr_joinable, send_announces, &state) == 0);
+
     struct sigevent sgv = {
-        .sigev_notify = SIGEV_THREAD
-      , .sigev_value = { .sival_ptr = &state }
+        .sigev_notify = SIGEV_SIGNAL
       , .sigev_signo = SIGALRM
-      , .sigev_notify_function = send_announces
-      , .sigev_notify_attributes = &attr_timer
     };
     timer_t timer_id;
     int timer_fd;
-    __syswrap(timer_fd = timer_create(CLOCK_MONOTONIC, &sgv, &timer_id));
+    __syswrap(timer_fd = timer_create(CLOCK_REALTIME, &sgv, &timer_id));
     struct itimerspec t_interval = {
         // 30 fps
         .it_interval = { .tv_sec = 0, .tv_nsec = 33333333 }
@@ -686,14 +764,15 @@ int main(int argc, char **argv) {
         // User pressed Ctrl+D - terminate server
         printf("[$] You pressed Ctrl+D, exiting gracefully\n");
     }
-    // TODO: graceful shutdown
-    __syswrap(timer_delete(timer_id));
+
+    // DONE: graceful shutdown
     for (int i = 0; i < THREAD_SPEC_COUNT; ++i) {
-        //lassert(pthread_kill(threads[i], SIGTERM) == 0);
-        lassert(pthread_cancel(threads[i]) == 0);
-        lassert(pthread_join(threads[i], NULL) == 0);
-        lassert(pthread_attr_destroy(&attr[i]) == 0);
+        //sassert(pthread_kill(threads[i], SIGTERM) == 0);
+        sassert(pthread_cancel(threads[i]) == 0);
+        sassert(pthread_join(threads[i], NULL) == 0);
     }
+    sassert(pthread_attr_destroy(&attr_joinable) == 0);
+    __syswrap(timer_delete(timer_id));
     // now we are the only thread, don't use mutexes
     for (size_t i = 0; i < state.sock_b.size; ++i) {
         close(((struct bc_data*)(state.sock_b.array[i].ptr))->broadcast_fd);
@@ -711,9 +790,7 @@ int main(int argc, char **argv) {
     }
     close(state.sock_u);
     close(state.sock_t);
-    for (size_t i = 0; i < state.sock_b.size; ++i) {
-        free(state.sock_b.array[i].ptr);
-    }
+    // this vector items were freed above
     vector_free(&state.sock_b);
     free(state.map.map_primitives);
     free(state.map_overlay.map_primitives);

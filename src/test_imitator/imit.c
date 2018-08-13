@@ -169,7 +169,7 @@ void connect_from_same(BCSPLAYER_FULL_STATE* pfs, uint64_t count_zombie_clients)
         sendto(pfs->sockfd, &msg_connect, sizeof(msg_connect),
         0, (struct sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
         while(1){
-            recvfrom(pfs->sockfd, buf, MAXBUF, 0, &serv, &size_serv);
+            recvfrom(pfs->sockfd, buf, MAXBUF, 0, (sockaddr*)&serv, &size_serv);
 			try_beacon = (BCSBEACON*)buf;
 			if(try_beacon->magic != BCSBEACON_MAGIC)
 				break;
@@ -197,7 +197,7 @@ void connect_from_same(BCSPLAYER_FULL_STATE* pfs, uint64_t count_zombie_clients)
     }
 }
 
-void several_connecting(BCSPLAYER_FULL_STATE* pfs, uint64_t count_zombie_clients){	
+void several_connecting(BCSPLAYER_FULL_STATE* pfs, int count_zombie_clients){	
 	int udp_zombie_sockets[count_zombie_clients];
 	for(int i = 0; i < count_zombie_clients; i++)
 		udp_zombie_sockets[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -205,16 +205,14 @@ void several_connecting(BCSPLAYER_FULL_STATE* pfs, uint64_t count_zombie_clients
     //пытаемся нагрузить сервер отсылая connect с разных портов
 	int connected_clients = 0;
 	sendto(pfs->sockfd, &msg_disconnect, sizeof(msg_disconnect),
-	0, &pfs->endpoint, sizeof(pfs->endpoint));
+	0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
     for(int i = 0; i < count_zombie_clients; i++){
         udp_zombie_sockets[i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        (udp_zombie_sockets[i], &msg_connect, sizeof(msg_connect),
-        0, &pfs->endpoint, sizeof(pfs->endpoint));
 		sendto(udp_zombie_sockets[i], &msg_connect, sizeof(msg_connect),
 		0, (struct sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
         //TODO waiting with epoll
         while(1){
-            recvfrom(udp_zombie_sockets[i], buf, MAXBUF, 0, &serv, &size_serv);
+            recvfrom(udp_zombie_sockets[i], buf, MAXBUF, 0, (sockaddr*)&serv, &size_serv);
 			try_beacon = (BCSBEACON*)buf;
 			if(try_beacon->magic != BCSBEACON_MAGIC)
 				break;
@@ -225,7 +223,7 @@ void several_connecting(BCSPLAYER_FULL_STATE* pfs, uint64_t count_zombie_clients
         switch(rep){
             case BCSREPLT_ACK:{
 				++connected_clients;
-                printf(stderr, "Server has connected with new client.\n");
+                fprintf(stderr, "Server has connected with new client.\n");
                 break;
             }
 			case BCSREPLT_MAP:{
@@ -265,10 +263,10 @@ void test_disconnectig(BCSPLAYER_FULL_STATE* pfs){
 	int count_disconnect = 0;
 	for(int i = 0; i < count_disconnect; i++){
 		sendto(pfs->sockfd, &msg_disconnect, sizeof(msg_disconnect),
-		0, &pfs->endpoint, sizeof(pfs->endpoint));
+		0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
 		fprintf(stdout, "->Disconnect\n");
 		sendto(pfs->sockfd, &msg_connect, sizeof(msg_disconnect),
-		0, &pfs->endpoint, sizeof(pfs->endpoint));
+		0, (sockaddr*)&pfs->endpoint, sizeof(pfs->endpoint));
 		fprintf(stdout, "->Connect\n");
 		hack_beacon(pfs->sockfd, buf);
 		reply = (BCSMSGREPLY*)buf;
@@ -285,12 +283,13 @@ typedef struct{
 	time_t t;
 } DOS_ARGV;
 
-void dos(DOS_ARGV* argv){
+void *dos(void *args){
+    DOS_ARGV *argv = (DOS_ARGV*)args;
 	for(uint64_t i = 0; i < argv->n; i++){
 		argv->socks[argv->n*argv->k + i] = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		for(uint64_t j = 0; j < argv->count_actions; j++){
 			sendto(argv->socks[i], &all_possible[j % 6 + 1], sizeof(all_possible[j % 6 + 1]),
-        	0, &argv->pfs->endpoint, sizeof(argv->pfs->endpoint));
+        	0, (sockaddr*)&argv->pfs->endpoint, sizeof(argv->pfs->endpoint));
 			fd_set read_set;
 			FD_ZERO(&read_set);
 			FD_SET(argv->socks[i], &read_set);
@@ -300,16 +299,18 @@ void dos(DOS_ARGV* argv){
 			int res_selects = select(argv->socks[i] + 1, &read_set, NULL, NULL, &t);
 			int a = be32toh(all_possible[j % 6 + 1].action);
 			if(res_selects == 0)
-				fprintf(log_file, "!!!Server timeout on %s request for %d.%d time.\n",
+				fprintf(log_file, "!!!Server timeout on %s request for %ld.%d time.\n",
 				names_resp[a], argv->t, 0);
 		}
 		sendto(argv->socks[i], &msg_disconnect, sizeof(msg_disconnect),
-		0, &argv->pfs->endpoint, sizeof(argv->pfs->endpoint));
+		0, (sockaddr*)&argv->pfs->endpoint, sizeof(argv->pfs->endpoint));
 		close(argv->socks[i]);
 	}
 	pthread_mutex_lock(&ctm);
 	--count_threads;
 	pthread_mutex_unlock(&ctm);
+    // conform pthread interface
+    return NULL;
 }
 
 
@@ -333,7 +334,7 @@ void test_dos(BCSPLAYER_FULL_STATE* pfs, uint64_t count_clients, uint64_t count_
 		pthread_create(&threads_array[i], NULL, dos, &argv[i]);
 	}
 	while(count_threads != 0){
-		printf("%d\n", count_threads);
+		printf("%ld\n", count_threads);
 	}
 	free(udp_zombie_sockets);
 	free(threads_array);

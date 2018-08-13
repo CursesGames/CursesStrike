@@ -37,7 +37,7 @@ BCSMSG msg_connect;
 BCSMSGREPLY* reply;
 BCSBEACON* try_beacon;
 struct sockaddr_in serv;
-ssize_t size_serv = sizeof(serv);
+socklen_t size_serv = sizeof(serv);
 
 char* names_reply[7];
 char* names_resp[7];

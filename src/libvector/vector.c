@@ -71,6 +71,10 @@ VECTOR_VALTYPE *vector_array_ptr(VECTOR *vect) {
     return vect->array;
 }
 
+void vector_clear_fast(VECTOR *vect) {
+    vect->size = 0;
+}
+
 void vector_free(VECTOR *vect) {
     free(vect->array);
 }

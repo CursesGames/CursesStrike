@@ -10,9 +10,13 @@
 
 // fix macro
 #undef __cplusplus
+
 // mute gcc-specific macro
 #define __builtin_alloca NULL // in real MSVC: _alloca(size)
 #define __builtin_popcount(val) 0
+
+// mute GNU-specific macro
+#define offsetof(x,y) 0
 
 #define be16toh(x) (uint16_t)(x)
 #define be32toh(x) (uint32_t)(x)

@@ -108,6 +108,8 @@ typedef enum __bcsaction {
   , BCSACTION_ROTATE // params: BCSDIRECTION (только LEFT или RIGHT)
     // request statistics
   , BCSACTION_REQSTATS // noparams
+    // tell the server that client is alive
+  , BCSACTION_KEEPALIVE
 } BCSACTION;
 STATIC_ASSERT(sizeof(BCSACTION) == 4);
 
@@ -202,18 +204,22 @@ STATIC_ASSERT(sizeof(BCSCLIENT_PUBLIC_EXT) == 24);
 // private information, only server know this
 // закрытая информация, которую о клиенте знает только сервер
 typedef struct __bcsclient_info_private {
-    // timestamp of last fire event,
-    // to limit fire rate
+    // timestamp of last fire event, to limit fire rate
     timeval128_t time_last_fire;
     // timestamp of last received datagram, to kick on connection drop
     timeval128_t time_last_dgram;
+    // timestamp of last move event, to limit speed
+    timeval128_t time_last_move;
+    // timestamp of last move/rotate/fire event
+    timeval128_t time_last_activity;
     // ip address and port of client
     struct sockaddr_in endpoint; // 16 bytes
     // last received packet no
     uint32_t last_packet_no;
+
     char _pad[4];
 } BCSCLIENT_PRIVATE;
-STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 56);
+STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 88);
 
 // TODO: extract fields directly into struct?
 // all information about client
@@ -221,12 +227,12 @@ STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 56);
 typedef struct {
     BCSCLIENT_PUBLIC public_info; // 16
     BCSCLIENT_PUBLIC_EXT public_ext_info; // 24
-    BCSCLIENT_PRIVATE private_info; // 56
+    BCSCLIENT_PRIVATE private_info; // 88
 } BCSCLIENT;
-STATIC_ASSERT(sizeof(BCSCLIENT) == 96);
+STATIC_ASSERT(sizeof(BCSCLIENT) == 128);
 
 typedef union {
-    int64_t long_p;
+    int64_t lng;
     struct {
         int32_t int_lo; // первый параметр
         int32_t int_hi; // второй параметр
@@ -270,13 +276,14 @@ typedef struct __bcsmsg_announce {
     uint16_t count_bullets;
     // номер записи, соответствующей самому игроку
     // спасибо за идею NRshka
-    uint32_t index_self;
+    uint16_t index_self;
     // all public information
     // the very first element [0] is always the client that received the message
     // вся публичная информация о клиентах
     // самый первый элемeнт [0] всегда тот клиент, который получил сообщение
     //  BCSCLIENT_PUBLIC *public_info;
     //char _pad[2];
+    uint16_t _zero;
 } BCSMSGANNOUNCE;
 STATIC_ASSERT(sizeof(BCSMSGANNOUNCE) == 8);
 
@@ -301,6 +308,7 @@ typedef struct __bcs_bullet {
     uint16_t y;
     BCSDIRECTION direction;
     uint16_t creator_id;
+    uint16_t _zero;
     //char _pad[6];
 } BCSBULLET;
 STATIC_ASSERT(sizeof(BCSBULLET) == 12);

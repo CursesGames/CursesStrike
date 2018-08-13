@@ -45,7 +45,8 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
     uint8_t *map_overlay_copy = state->map_overlay.map_primitives;
 
     switch (bullet->direction) {
-        case BCSDIR_LEFT: // y - constant, x can move at negative direction 
+        case BCSDIR_LEFT: {
+            // y - constant, x can move at negative direction 
             line_size = width * bullet_y;
             for (int i = 0; i < steps; ++i) {
                 if (bullet_x == 0) {
@@ -57,12 +58,14 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 tmp_primitive = map_overlay_copy[line_size + bullet_x];
                 switch (tmp_primitive) {
                     case PUNIT_OPEN_SPACE:
-                    case PUNIT_WATER:
+                    case PUNIT_WATER: {
                         break;
+                    }
                     case PUNIT_ROCK:
-                    case PUNIT_BOX:
+                    case PUNIT_BOX: {
                         return false;
-                    default:
+                    }
+                    default: {
                         if (tmp_primitive == rifleman) {
                             // don't kill yourself!!!
                             break;
@@ -81,12 +84,24 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                            .tv_sec += RESPAWN_TIMER;
                         ++(state->client[rifleman].public_ext_info.frags);
 
+                        // копипаст-программирование - говно!
+                        ALOGD("KILL event at (%hu, %hu), hunter: %hu '%s', victim: %hhu '%s'\n"
+		                    , bullet_x, bullet_y
+		                    , rifleman, state->client[rifleman].public_ext_info.nickname
+		                    , tmp_primitive, state->client[tmp_primitive].public_ext_info.nickname
+		                );
+                        lassert(state->client[tmp_primitive].public_info.position.x == bullet_x);
+                        lassert(state->client[tmp_primitive].public_info.position.y == bullet_y);
 
                         return false;
+                        break;
+                    }
                 }
             }
             break;
-        case BCSDIR_RIGHT: // y - constant, x can move at positive direction
+        }
+        case BCSDIR_RIGHT: {
+            // y - constant, x can move at positive direction
             line_size = width * bullet_y;
             for (int i = 0; i < steps; ++i) {
                 if (bullet_x == width) {
@@ -101,12 +116,14 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 tmp_primitive = map_overlay_copy[line_size + bullet_x];
                 switch (tmp_primitive) {
                     case PUNIT_OPEN_SPACE:
-                    case PUNIT_WATER:
+                    case PUNIT_WATER: {
                         break;
+                    }
                     case PUNIT_ROCK:
-                    case PUNIT_BOX:
+                    case PUNIT_BOX: {
                         return false;
-                    default:
+                    }
+                    default: {
                         if (tmp_primitive == rifleman) {
                             // don't kill yourself!!!
                             break;
@@ -124,11 +141,25 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                            .time_last_fire
                            .tv_sec += RESPAWN_TIMER;
                         ++(state->client[rifleman].public_ext_info.frags);
+
+                        // копипаст-программирование - говно!
+                        ALOGD("KILL event at (%hu, %hu), hunter: %hu '%s', victim: %hhu '%s'\n"
+		                    , bullet_x, bullet_y
+		                    , rifleman, state->client[rifleman].public_ext_info.nickname
+		                    , tmp_primitive, state->client[tmp_primitive].public_ext_info.nickname
+		                );
+                        lassert(state->client[tmp_primitive].public_info.position.x == bullet_x);
+                        lassert(state->client[tmp_primitive].public_info.position.y == bullet_y);
+
                         return false;
+                        break;
+                    }
                 }
             }
             break;
-        case BCSDIR_UP: // x - constant, y can move at negative direction
+        }
+        case BCSDIR_UP: {
+            // x - constant, y can move at negative direction
             for (int i = 0; i < steps; ++i) {
                 if (bullet_y == 0) {
                     return false;
@@ -139,12 +170,14 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 tmp_primitive = map_overlay_copy[width * bullet_y + bullet_x];
                 switch (tmp_primitive) {
                     case PUNIT_OPEN_SPACE:
-                    case PUNIT_WATER:
+                    case PUNIT_WATER: {
                         break;
+                    }
                     case PUNIT_ROCK:
-                    case PUNIT_BOX:
+                    case PUNIT_BOX: {
                         return false;
-                    default:
+                    }
+                    default: {
                         if (tmp_primitive == rifleman) {
                             // don't kill yourself!!!
                             break;
@@ -162,11 +195,25 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                            .time_last_fire
                            .tv_sec += RESPAWN_TIMER;
                         ++(state->client[rifleman].public_ext_info.frags);
+
+                        // копипаст-программирование - говно!
+                        ALOGD("KILL event at (%hu, %hu), hunter: %hu '%s', victim: %hhu '%s'\n"
+		                    , bullet_x, bullet_y
+		                    , rifleman, state->client[rifleman].public_ext_info.nickname
+		                    , tmp_primitive, state->client[tmp_primitive].public_ext_info.nickname
+		                );
+                        lassert(state->client[tmp_primitive].public_info.position.x == bullet_x);
+                        lassert(state->client[tmp_primitive].public_info.position.y == bullet_y);
+
                         return false;
+                        break;
+                    }
                 }
             }
             break;
-        case BCSDIR_DOWN: // x - constant, y can move at positive direction
+        }
+        case BCSDIR_DOWN: {
+            // x - constant, y can move at positive direction
             for (int i = 0; i < steps; ++i) {
                 if (bullet_y == height - 1) {
                     return false;
@@ -177,12 +224,14 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                 tmp_primitive = map_overlay_copy[width * bullet_y + bullet_x];
                 switch (tmp_primitive) {
                     case PUNIT_OPEN_SPACE:
-                    case PUNIT_WATER:
+                    case PUNIT_WATER: {
                         break;
+                    }
                     case PUNIT_ROCK:
-                    case PUNIT_BOX:
+                    case PUNIT_BOX: {
                         return false;
-                    default:
+                    }
+                    default: {
                         if (tmp_primitive == rifleman) {
                             // don't kill yourself!!!
                             break;
@@ -211,19 +260,32 @@ bool bcsgameplay_bullet_step(BCSSERVER_FULL_STATE *state, BCSBULLET *bullet,
                         //       .private_info
                         //       .time_last_fire
                         //       .tv_sec);
+
+                        // копипаст-программирование - говно!
+                        ALOGD("KILL event at (%hu, %hu), hunter: %hu '%s', victim: %hhu '%s'\n"
+		                    , bullet_x, bullet_y
+		                    , rifleman, state->client[rifleman].public_ext_info.nickname
+		                    , tmp_primitive, state->client[tmp_primitive].public_ext_info.nickname
+		                );
+                        lassert(state->client[tmp_primitive].public_info.position.x == bullet_x);
+                        lassert(state->client[tmp_primitive].public_info.position.y == bullet_y);
+
                         return false;
+                        break;
+                    }
                 }
             }
             break;
-        default:
+        }
+        default: {
             break;
+        }
     }
     // rewrite x and y coordinates bullet
     bullet->x = bullet_x;
     bullet->y = bullet_y;
 
     return true;
-
 }
 
 bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
@@ -280,16 +342,26 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
             useful_area_hight = CHECK_AREA_SIZE - offset_y;
         }
 
-        start_area = (spawn_coordinate_y - useful_area_hight) * 
-            width +(spawn_coordinate_x - useful_area_width);                    // start check area
-        
-        end_area = (spawn_coordinate_y + useful_area_hight) * 
-            width + (spawn_coordinate_x + useful_area_width);                   // end check area
+        start_area = (spawn_coordinate_y - useful_area_hight) *
+            width + (spawn_coordinate_x - useful_area_width); // start check area
+
+        end_area = (spawn_coordinate_y + useful_area_hight) *
+            width + (spawn_coordinate_x + useful_area_width); // end check area
+
+        // Str1ker, 13.08.2018: попытка пофиксить выход за границы массива.
+        //end_area = min(end_area, width * height - 1);
+        lassert(end_area <= width * height - 1);
+        // Илья Коротецкий, [13.08.18 23:47]
+        // ну тогда и для start тоже
+        // Илья Коротецкий, [13.08.18 23:47]
+        // потому что старт тоже может выйти
+        lassert(start_area <= width * height - 1);
 
         if (map_overlay_copy[spawn_coordinate_y * width + spawn_coordinate_x]
-            != PUNIT_OPEN_SPACE) {                                              // check
-            continue;                                                           // can respawn possibility
-        }                                                                       // at this coordinate
+            != PUNIT_OPEN_SPACE) {
+            // check
+            continue; // can respawn possibility
+        } // at this coordinate
 
         for (uint16_t i = start_area; i < end_area - width; i += width) {
             for (uint16_t j = 0; j < useful_area_width; ++j) {
@@ -323,8 +395,10 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
                     // bullet flying to player from upper
                     ++danger_lvl;
                 }
-                else if (bullet->y < spawn_coordinate_y && // bullet flying to player from down
+
+                else if (bullet->y < spawn_coordinate_y &&
                     bullet->direction == BCSDIR_DOWN) {
+                    // bullet flying to player from down
                     ++danger_lvl;
                 }
             }
