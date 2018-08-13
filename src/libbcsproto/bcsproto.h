@@ -216,7 +216,8 @@ typedef struct __bcsclient_info_private {
     struct sockaddr_in endpoint; // 16 bytes
     // last received packet no
     uint32_t last_packet_no;
-    //char _pad[4];
+
+    char _pad[4];
 } BCSCLIENT_PRIVATE;
 STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 88);
 
@@ -226,7 +227,7 @@ STATIC_ASSERT(sizeof(BCSCLIENT_PRIVATE) == 88);
 typedef struct {
     BCSCLIENT_PUBLIC public_info; // 16
     BCSCLIENT_PUBLIC_EXT public_ext_info; // 24
-    BCSCLIENT_PRIVATE private_info; // 72
+    BCSCLIENT_PRIVATE private_info; // 88
 } BCSCLIENT;
 STATIC_ASSERT(sizeof(BCSCLIENT) == 128);
 
