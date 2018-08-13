@@ -322,7 +322,7 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
     uint8_t *map_overlay_copy = state->map_overlay.map_primitives;
 
     while (true) {
-        spawn_coordinate_y = rand() % height; // choose random spawn place
+        spawn_coordinate_y = rand() % height;                                   // choose random spawn place
         spawn_coordinate_x = rand() % width;
 
         if (spawn_coordinate_x < CHECK_AREA_SIZE) {
