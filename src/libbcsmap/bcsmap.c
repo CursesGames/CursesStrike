@@ -127,21 +127,26 @@ bool bcsmap_get_from_bmp(const char *filename, BCSMAP *map) {
         temp_RGB_unit += raster_data[i].rgbtBlue;
 
         switch (temp_RGB_unit) {
-            case COLOR_OPEN_SPACE:
+            case COLOR_OPEN_SPACE: {
                 primitives_arr[i] = PUNIT_OPEN_SPACE;
                 break;
-            case COLOR_WATER:
+            }
+            case COLOR_WATER: {
                 primitives_arr[i] = (BYTE)PUNIT_WATER;
                 break;
-            case COLOR_BOX:
+            }
+            case COLOR_BOX: {
                 primitives_arr[i] = (BYTE)PUNIT_BOX;
                 break;
-            case COLOR_ROCK:
+            }
+            case COLOR_ROCK: {
                 primitives_arr[i] = (BYTE)PUNIT_ROCK;
                 break;
-            default:
+            }
+            default: {
                 primitives_arr[i] = PUNIT_OPEN_SPACE;
                 break;
+            }
         }
         temp_RGB_unit = 0;
     }

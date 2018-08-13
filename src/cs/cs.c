@@ -160,7 +160,7 @@ void *receiver_func(void *argv) {
         pthread_mutex_lock(&pfs->mutex_self);
         BCSMSGREPLY *repl = (BCSMSGREPLY*)buf;
         switch (be32toh(repl->type)) {
-            case BCSREPLT_ANNOUNCE:
+            case BCSREPLT_ANNOUNCE: {
                 // this is to trick the compiler that's not a declaration (:
                 // ReSharper disable once CppAssignedValueIsNeverUsed
                 // ReSharper disable once CppIdenticalOperandsInBinaryExpression
@@ -201,31 +201,32 @@ void *receiver_func(void *argv) {
                 __syswrap(gettimeofday(&pfs->last_announce, NULL));
                 //pthread_mutex_unlock(&pfs->mutex_self);
                 break;
+            }
 
-            case BCSREPLT_EMERGENCY:
+            case BCSREPLT_EMERGENCY: {
                 ALOGW("Received emergency message\n");
                 break;
+            }
 
-            case BCSREPLT_ACK:
+            case BCSREPLT_ACK: {
                 // everything is OK
                 break;
+            }
 
-            case BCSREPLT_NACK:
+            case BCSREPLT_NACK: {
                 // something's wrong
                 ALOGW("Received NACK, action cancelled\n");
                 break;
+            }
 
-            case BCSREPLT_MAP:
+            case BCSREPLT_MAP: {
                 ALOGI("Received map change event\n");
                 break;
+            }
 
-            case BCSREPLT_STATS:
+            case BCSREPLT_STATS: {
                 ALOGI("Received stats\n");
-                // this is to trick the compiler that's not a declaration (:
-                // ReSharper disable once CppAssignedValueIsNeverUsed
-                // ReSharper disable once CppIdenticalOperandsInBinaryExpression
-                rcvd = rcvd;
-                ann = (BCSMSGANNOUNCE*)(repl + 1);
+                BCSMSGANNOUNCE *ann = (BCSMSGANNOUNCE*)(repl + 1);
                 BCSCLIENT_PUBLIC_EXT *plstats = (BCSCLIENT_PUBLIC_EXT*)(ann + 1);
 
                 pfs->others.index_self = be16toh(ann->index_self);
@@ -238,8 +239,9 @@ void *receiver_func(void *argv) {
                 }
                 pfs->stats->_clear = true;
                 break;
+            }
 
-            case BCSREPLT_SHUTDOWN:
+            case BCSREPLT_SHUTDOWN: {
                 // don't quit until frame is not drawn
                 pthread_mutex_lock(&pfs->mutex_frame);
                 curs_set(true);
@@ -247,15 +249,21 @@ void *receiver_func(void *argv) {
                 printf(ANSI_COLOR_RED "Server shutted down" ANSI_CLRST "\n");
                 exit(2);
                 break;
+            }
 
-            case BCSREPLT_NONE:
+            case BCSREPLT_NONE: {
                 ALOGW("Server sent message of type = %u, do nothing\n", be32toh(repl->type));
                 break;
-            default: __syswrap(-1);
+            }
+
+            default: {
+                __syswrap(-1);
+                break;
+            }
         }
         pthread_mutex_unlock(&pfs->mutex_self);
 
-    force_redraw:
+force_redraw:
         if (need_redraw) {
             draw_window(pfs);
         }
@@ -284,7 +292,7 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
         for (size_t j = 0; j < map->width; j++) {
             //char c = '\0';
             switch ((BCSMAPPRIMITIVE)*ptr) {
-                case PUNIT_OPEN_SPACE:
+                case PUNIT_OPEN_SPACE: {
                     nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
                     // winch puts char under cursor, while waddch adjusts cursor
                     // now we (and you too) can use my nice function mvputch()!
@@ -293,27 +301,31 @@ void init_map(WINDOW **pad_ptr, BCSMAP *map) {
                     nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_BLANK)));
                     //c = ' ';
                     break; // empty cell
+                }
 
-                case PUNIT_ROCK:
+                case PUNIT_ROCK: {
                     nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
-                    nassert(mvwinsch(pad, i, j, '#'));
+                    nassert(mvwputch(pad, i, j, '#'));
                     nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WALL)));
                     //c = '#';
                     break;
+                }
 
-                case PUNIT_BOX:
+                case PUNIT_BOX: {
                     nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_CRATE)));
-                    nassert(mvwinsch(pad, i, j, 'X'));
+                    nassert(mvwputch(pad, i, j, 'X'));
                     nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_CRATE)));
                     //c = 'X';
                     break;
+                }
 
-                case PUNIT_WATER:
+                case PUNIT_WATER: {
                     nassert(wattron(pad, COLOR_PAIR(CPAIR_CELL_WATER)));
-                    nassert(mvwinsch(pad, i, j, '~'));
+                    nassert(mvwputch(pad, i, j, '~'));
                     nassert(wattroff(pad, COLOR_PAIR(CPAIR_CELL_WATER)));
                     //c = '~';
                     break;
+                }
             }
             //fputc(c, f);
             ++ptr;
@@ -334,35 +346,40 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
     pthread_mutex_unlock(&pfs->mutex_self);
 
     switch (action) {
-        case BCSACTION_DISCONNECT: break;
+        case BCSACTION_DISCONNECT: {
+            break;
+        }
         case BCSACTION_MOVE: {
             // не спамим на сервер если ничё не можем
             if (state != BCSCLST_CONNECTED && state != BCSCLST_PLAYING)
                 return;
             msg.un.ints.int_lo = htobe32(dir);
+            break;
         }
-        break;
         case BCSACTION_FIRE: {
             // не спамим на сервер если ничё не можем
             if (state != BCSCLST_CONNECTED && state != BCSCLST_PLAYING)
                 return;
+            break;
         }
-        break;
         case BCSACTION_ROTATE: {
             // не спамим на сервер если ничё не можем
             if (state != BCSCLST_PLAYING)
                 return;
             switch (dir) {
                 case BCSDIR_LEFT:
-                case BCSDIR_RIGHT:
+                case BCSDIR_RIGHT: {
                     msg.un.ints.int_lo = htobe32(dir);
                     break;
+                }
 
-                default: ALOGW("Wrong direction for rotation: %u\n", dir);
+                default: {
+                    ALOGW("Wrong direction for rotation: %u\n", dir);
                     return;
+                }
             }
+            break;
         }
-        break;
         case BCSACTION_REQSTATS: {
             pthread_mutex_lock(&pfs->mutex_self);
             pfs->show_stats = !pfs->show_stats;
@@ -370,11 +387,13 @@ void do_action(BCSPLAYER_FULL_STATE *pfs, BCSACTION action, BCSDIRECTION dir) {
             pthread_mutex_unlock(&pfs->mutex_self);
             if (!request_stats)
                 return;
+            break;
         }
-        break;
 
-        default: ALOGW("Wrong action type %u\n", action);
+        default: {
+            ALOGW("Wrong action type %u\n", action);
             return;
+        }
     }
 
     bcsproto_new_packet(&msg);
@@ -454,14 +473,16 @@ void draw_window(BCSPLAYER_FULL_STATE *pfs) {
             char c = ' ';
             switch (pfs->bullets.array[i].direction) {
                 case BCSDIR_LEFT:
-                case BCSDIR_RIGHT:
+                case BCSDIR_RIGHT: {
                     c = '-';
                     break;
+                }
 
                 case BCSDIR_UP:
-                case BCSDIR_DOWN:
+                case BCSDIR_DOWN: {
                     c = '|';
                     break;
+                }
             }
             nassert(mvwputch(mapobj, by, bx, c));
         }
@@ -550,14 +571,22 @@ void *smooth_bullets(void *argv) {
             // двигаем пульки
             for (uint16_t i = 0; i < pfs->bullets.count; ++i) {
                 switch (pfs->bullets.array[i].direction) {
-                    case BCSDIR_LEFT: --(pfs->bullets.array[i].x);
+                    case BCSDIR_LEFT: {
+                        --(pfs->bullets.array[i].x);
                         break;
-                    case BCSDIR_UP: --(pfs->bullets.array[i].y);
+                    }
+                    case BCSDIR_UP: {
+                        --(pfs->bullets.array[i].y);
                         break;
-                    case BCSDIR_RIGHT: ++(pfs->bullets.array[i].x);
+                    }
+                    case BCSDIR_RIGHT: {
+                        ++(pfs->bullets.array[i].x);
                         break;
-                    case BCSDIR_DOWN: ++(pfs->bullets.array[i].y);
+                    }
+                    case BCSDIR_DOWN: {
+                        ++(pfs->bullets.array[i].y);
                         break;
+                    }
                 }
             }
             // думаю, это нужно
@@ -1117,9 +1146,10 @@ connect_to:
             /////////////////////////
 
             case 0x3: // Ctrl+C
-            case KEY_F(10): // F10
+            case KEY_F(10): { // F10
                 do_action(&pfs, BCSACTION_DISCONNECT, BCSDIR_UNDEF);
                 goto loop_leave;
+            }
 
             case KEY_F(8): {
                 // F8
@@ -1140,61 +1170,77 @@ connect_to:
                 putwin(pfs.mapobj, f);
                 fclose(f);
                 pthread_mutex_unlock(&pfs.mutex_frame);
+                break;
             }
-            break;
 
             case KEY_F(7): {
                 // F7
                 pthread_mutex_lock(&pfs.mutex_self);
                 pfs.smooth_bullets = !pfs.smooth_bullets;
                 pthread_mutex_unlock(&pfs.mutex_self);
+                break;
             }
-            break;
 
-            case RAW_KEY_TAB:
+            case RAW_KEY_TAB: {
                 do_action(&pfs, BCSACTION_REQSTATS, BCSDIR_UNDEF);
                 break;
+            }
 
             case 'a':
             case 'A':
-            case KEY_LEFT: do_action(&pfs, BCSACTION_MOVE, BCSDIR_LEFT);
+            case KEY_LEFT: {
+                do_action(&pfs, BCSACTION_MOVE, BCSDIR_LEFT);
                 break;
+            }
 
             case 'd':
             case 'D':
-            case KEY_RIGHT: do_action(&pfs, BCSACTION_MOVE, BCSDIR_RIGHT);
+            case KEY_RIGHT: {
+                do_action(&pfs, BCSACTION_MOVE, BCSDIR_RIGHT);
                 break;
+            }
 
             case 'w':
             case 'W':
-            case KEY_UP: do_action(&pfs, BCSACTION_MOVE, BCSDIR_UP);
+            case KEY_UP: {
+                do_action(&pfs, BCSACTION_MOVE, BCSDIR_UP);
                 break;
+            }
 
             case 's':
             case 'S':
-            case KEY_DOWN: do_action(&pfs, BCSACTION_MOVE, BCSDIR_DOWN);
+            case KEY_DOWN: {
+                do_action(&pfs, BCSACTION_MOVE, BCSDIR_DOWN);
                 break;
+            }
 
             case 'q':
-            case 'Q': do_action(&pfs, BCSACTION_ROTATE, BCSDIR_LEFT);
+            case 'Q': {
+                do_action(&pfs, BCSACTION_ROTATE, BCSDIR_LEFT);
                 break;
+            }
 
             case 'e':
-            case 'E': do_action(&pfs, BCSACTION_ROTATE, BCSDIR_RIGHT);
+            case 'E': {
+                do_action(&pfs, BCSACTION_ROTATE, BCSDIR_RIGHT);
                 break;
+            }
 
-            case ' ': do_action(&pfs, BCSACTION_FIRE, BCSDIR_UNDEF);
+            case ' ': {
+                do_action(&pfs, BCSACTION_FIRE, BCSDIR_UNDEF);
                 break;
+            }
 
             case ERR:
-            default:
+            default: {
                 has_pressed = false;
                 break;
+            }
         }
         if (has_pressed) {
             // be more responsible. 75 msec is too much
-            usleep(75000);
-            //usleep(10000);
+            //usleep(75000);
+            usleep(10000);
             nassert(flushinp());
         }
     }

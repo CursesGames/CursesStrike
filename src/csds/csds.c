@@ -412,31 +412,58 @@ void *state_machine(void *argv) {
 void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
     const char dirchar[] = { '<', '^', '>', 'v' };
     pthread_mutex_lock(&state->mutex_self);
+    timeval128_t now;
+    __syswrap(gettimeofday(&now, NULL));
     fprintf(f, "Client slots:\n");
     for (int i = 0; i < BCSSERVER_MAXCLIENTS; ++i) {
         BCSCLIENT *cl = &state->client[i];
         fprintf(f, "Slot #%d: ", i);
         switch (cl->public_info.state) {
-            case BCSCLST_FREESLOT: fprintf(f, "FREESLOT");
+            case BCSCLST_FREESLOT: {
+                fprintf(f, "FREESLOT");
                 break;
-            case BCSCLST_CONNECTING: fprintf(f, "CONNECTING");
+            }
+            case BCSCLST_CONNECTING: {
+                fprintf(f, "CONNECTING");
                 break;
-            case BCSCLST_CONNECTED: fprintf(f, "CONNECTED");
+            }
+            case BCSCLST_CONNECTED: {
+                fprintf(f, "CONNECTED");
                 break;
-            case BCSCLST_PLAYING: fprintf(f, "PLAYING");
+            }
+            case BCSCLST_PLAYING: {
+                fprintf(f, "PLAYING");
                 break;
-            case BCSCLST_RESPAWNING: fprintf(f, "RESPAWNING");
+            }
+            case BCSCLST_RESPAWNING: {
+                fprintf(f, "RESPAWNING");
                 break;
+            }
         }
-        fprintf(f, "(%u), (%hu, %hu), %c (%u)\n", cl->public_info.state
+        fprintf(f, "(%u), (%hu, %hu), %c (%u), nick '%s', %hu:%hu\n"
+		      , cl->public_info.state
               , cl->public_info.position.x, cl->public_info.position.y
-              , dirchar[cl->public_info.direction], cl->public_info.direction);
+              , dirchar[cl->public_info.direction], cl->public_info.direction
+		      , cl->public_ext_info.nickname
+              , cl->public_ext_info.frags, cl->public_ext_info.deaths
+		);
 
-        fprintf(f, "\tNickname = '%s', %hu:%hu\n", cl->public_ext_info.nickname
-              , cl->public_ext_info.frags, cl->public_ext_info.deaths);
-        fprintf(f, "\t%s:%hu, seq = %u, (timers hidden)\n"
+        fprintf(f, "\t%s:%hu, seq = %u, timers:\n"
               , inet_ntoa(cl->private_info.endpoint.sin_addr)
-              , cl->private_info.endpoint.sin_port, cl->private_info.last_packet_no);
+              , cl->private_info.endpoint.sin_port, cl->private_info.last_packet_no
+		);
+
+        timeval128_t t_dgram, t_move, t_fire, t_activity;
+        timersub(&cl->private_info.time_last_dgram, &now, &t_dgram);
+        timersub(&cl->private_info.time_last_move, &now, &t_move);
+        timersub(&cl->private_info.time_last_fire, &now, &t_fire);
+        timersub(&cl->private_info.time_last_activity, &now, &t_activity);
+        fprintf(f, "\tdgram: %ld.%06lu, move: %ld.%06lu, fire: %ld.%06lu, act: %ld.%06lu\n"
+		    , t_dgram.tv_sec, t_dgram.tv_usec
+            , t_move.tv_sec,  t_move.tv_usec
+            , t_fire.tv_sec,  t_fire.tv_usec
+		    , t_activity.tv_sec, t_activity.tv_usec
+		);
     }
     fprintf(f, "Bullet objects: %lu\n", state->bullets.count);
     LIST_VALTYPE *lv;
@@ -455,13 +482,22 @@ void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
         for (uint16_t x = 0; x < map.width; ++x) {
             char c;
             switch ((BCSMAPPRIMITIVE)(map.map_primitives[y * map.width + x])) {
-                case PUNIT_ROCK: c = '#';
+                case PUNIT_ROCK: {
+                    c = '#';
                     break;
-                case PUNIT_WATER: c = '~';
+                }
+                case PUNIT_WATER: {
+                    c = '~';
                     break;
-                case PUNIT_BOX: c = 'X';
+                }
+                case PUNIT_BOX: {
+                    c = 'X';
                     break;
-                default: c = ' ';
+                }
+                default: {
+                    c = ' ';
+                    break;
+                }
             }
             map_xray[y * map.width + x] = c;
         }
@@ -490,10 +526,16 @@ void dump_state(BCSSERVER_FULL_STATE *state, FILE *f) {
         char c = map_xray[bullet.y * map.width + bullet.x];
         char d = ' ';
         switch (bullet.direction) {
-            case BCSDIR_LEFT: case BCSDIR_RIGHT: d = '-';
+            case BCSDIR_LEFT: 
+            case BCSDIR_RIGHT: {
+                d = '-';
                 break;
-            case BCSDIR_UP: case BCSDIR_DOWN: d = '|';
+            }
+            case BCSDIR_UP:
+            case BCSDIR_DOWN: {
+                d = '|';
                 break;
+            }
         }
         if (c == ' ')
             map_xray[bullet.y * map.width + bullet.x] = d;
