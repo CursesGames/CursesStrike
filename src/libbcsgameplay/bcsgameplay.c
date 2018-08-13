@@ -246,8 +246,10 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
     uint16_t spawn_coordinate_x;
     uint16_t height = state->map.height;
     uint16_t width = state->map.width;
-    uint16_t offset_y;
-    uint16_t offset_x;
+    uint16_t offset_y = 0;
+    uint16_t offset_x = 0;
+    uint16_t useful_area_width = CHECK_AREA_SIZE;
+    uint16_t useful_area_hight = CHECK_AREA_SIZE;
 
     uint16_t start_area;
     uint16_t end_area;
@@ -258,41 +260,46 @@ bool bcsgameplay_respawn(BCSSERVER_FULL_STATE *state, size_t id) {
     uint8_t *map_overlay_copy = state->map_overlay.map_primitives;
 
     while (true) {
-        spawn_coordinate_y = rand() % height; // choose random spawn place
+        spawn_coordinate_y = rand() % height;                                   // choose random spawn place
         spawn_coordinate_x = rand() % width;
 
         if (spawn_coordinate_x < CHECK_AREA_SIZE) {
-            offset_x = spawn_coordinate_x % CHECK_AREA_SIZE;
+            offset_x = spawn_coordinate_x + 1;
+            useful_area_width = CHECK_AREA_SIZE - offset_x;
         }
         if (spawn_coordinate_y < CHECK_AREA_SIZE) {
-            offset_y = spawn_coordinate_y % CHECK_AREA_SIZE;
+            offset_y = spawn_coordinate_y + 1;
+            useful_area_hight = CHECK_AREA_SIZE - offset_y;
         }
         if (spawn_coordinate_x > (width - CHECK_AREA_SIZE)) {
-            offset_x = spawn_coordinate_x % CHECK_AREA_SIZE;
+            offset_x = (spawn_coordinate_x % CHECK_AREA_SIZE);
+            useful_area_width = CHECK_AREA_SIZE - offset_x;
         }
-        if (spawn_coordinate_y > height) {
-            offset_y = spawn_coordinate_y % CHECK_AREA_SIZE;
+        if (spawn_coordinate_y > (height - CHECK_AREA_SIZE)) {
+            offset_y = (spawn_coordinate_y % CHECK_AREA_SIZE);
+            useful_area_hight = CHECK_AREA_SIZE - offset_y;
         }
 
-        start_area = (spawn_coordinate_y - CHECK_AREA_SIZE) * width +
-            (spawn_coordinate_x - CHECK_AREA_SIZE); // start check area
-        end_area = (spawn_coordinate_y + CHECK_AREA_SIZE) * width +
-            (spawn_coordinate_x + CHECK_AREA_SIZE); // end check area
+        start_area = (spawn_coordinate_y - useful_area_hight) * 
+            width +(spawn_coordinate_x - useful_area_width);                    // start check area
+        
+        end_area = (spawn_coordinate_y + useful_area_hight) * 
+            width + (spawn_coordinate_x + useful_area_width);                   // end check area
 
         // Str1ker, 13.08.2018: попытка пофиксить выход за границы массива.
         end_area = min(end_area, width * height - 1);
 
         if (map_overlay_copy[spawn_coordinate_y * width + spawn_coordinate_x]
-            != PUNIT_OPEN_SPACE) {
-            // check
-            continue; // can respawn possibility
-        } // at this coordinate
+            != PUNIT_OPEN_SPACE) {                                              // check
+            continue;                                                           // can respawn possibility
+        }                                                                       // at this coordinate
 
-        for (uint16_t i = start_area; i < end_area; ++i) {
-            // search enemy at area
-            if (map_overlay_copy[i] < BCSSERVER_MAXCLIENTS) {
-                // potential danger
-                ++danger_lvl;
+        for (uint16_t i = start_area; i < end_area - width; i += width) {
+            for (uint16_t j = 0; j < useful_area_width; ++j) {
+                if (map_overlay_copy[i + j] < BCSSERVER_MAXCLIENTS) {
+                    // potential danger
+                    ++danger_lvl;
+                }
             }
         }
 
