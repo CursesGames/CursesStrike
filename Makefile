@@ -41,6 +41,12 @@ CONFIG := prerelease
 CFLAGS += -O3 -D NDEBUG -D RELEASE -g
 endif
 
+ifeq ($(strip $(NCURSES_FROM_SOURCE)),1)
+DEPDIR := $(ROOTDIR)/src-deps
+CFLAGS += -I$(DEPDIR)/ncurses/include
+LDFLAGS += -L$(DEPDIR)/ncurses/lib
+endif
+
 include $(ROOTDIR)/src-build/help.mk
 
 # last resort target, to redirect all lower level targets

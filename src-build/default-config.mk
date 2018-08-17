@@ -21,6 +21,8 @@ BINDIR := $(ROOTDIR)/bin
 LIBDIR := $(ROOTDIR)/lib
 OBJDIR := $(ROOTDIR)/obj
 SRCDIR := $(ROOTDIR)/src
+#DEPDIR := $(ROOTDIR)/src-deps
+DEPDIR := $(ROOTDIR)/src-build/arch/x64
 endif
 
 BUILD_SUBSYSTEM_PATH := $(ROOTDIR)/src-build

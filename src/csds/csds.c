@@ -65,7 +65,8 @@ void *send_broadcast(void *argv) {
     while (ifaddr != NULL) {
         if (ifaddr->ifa_addr != NULL && ifaddr->ifa_addr->sa_family == AF_INET) {
             ALOGI("Server is accessible on %s:%hu\n"
-              , inet_ntoa(((sockaddr_in*)ifaddr->ifa_addr)->sin_addr), (uint16_t)BCSSERVER_DEFAULT_PORT);
+              , inet_ntoa(((sockaddr_in*)ifaddr->ifa_addr)->sin_addr)
+		      , (uint16_t)BCSSERVER_DEFAULT_PORT);
         }
         if (
             ifaddr->ifa_addr == NULL
@@ -677,7 +678,8 @@ int main(int argc, char **argv) {
     sassert(pthread_create(&threads[THREAD_UDP_MAIN], &attr_joinable, state_machine, &state) == 0);
 
     // create thread for broadcast
-    sassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr_joinable, send_broadcast, &state.sock_b) == 0);
+    sassert(pthread_create(&threads[THREAD_UDP_BCAST], &attr_joinable
+		, send_broadcast, &state.sock_b) == 0);
 
     // create thread for announces
     // Str1ker, 06.08.2018: replace thread to system monotonic clock timer

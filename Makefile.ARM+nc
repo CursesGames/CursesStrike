@@ -7,22 +7,17 @@ include $(ROOTDIR)/src-build/default-config.mk
 # If you want to move to another architecture, you might have to recompile ncurses from sources!
 # cross-compiler
 ifeq ($(strip $(CROSS_COMPILE)),)
-CROSS_COMPILE := /home/striker/bin/cross-compile/openwrt-sdk-18.06.1-ar71xx-generic_gcc-7.3.0_musl.Linux-x86_64/staging_dir/toolchain-mips_24kc_gcc-7.3.0_musl/bin/mips-openwrt-linux-musl-
+CROSS_COMPILE := /home/striker/bin/cross-compile/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
 endif
 
 override CC := $(CROSS_COMPILE)gcc
-override DEPDIR := $(ROOTDIR)/src-build/arch/mips
 
 # whole solution flags
 CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter
-CFLAGS += -march=24kc -mtune=24kc -msoft-float -I$(DEPDIR)/ncurses/include
-# link with target libc by toolchain
-# it is known for me how to link with target libc, but not ncurses..
-# here musl instead of glibc
-LDFLAGS := -msoft-float -L$(DEPDIR)/ncurses/lib
-
-# this is a quirk of openwrt mips toolchain
-export STAGING_DIR := /tmp
+CFLAGS += -mabi=aapcs-linux -mfloat-abi=hard -march=armv7 -I$(DEPDIR)/ncurses/include
+# link with target glibc by toolchain
+# it is known for me how to link with target glibc, but not ncurses..
+LDFLAGS := -mfloat-abi=hard -L$(DEPDIR)/ncurses/lib
 
 # export ALL variables
 export
@@ -32,7 +27,7 @@ all: config
 	@CONFIG=$(CONFIG) $(MAKE) -$(MKFLG)C $(SRCDIR) projects
 
 # BUILD CONFIGURATIONS
-# optimized for tp-link tl-wr1043nd v1 router with openwrt, you can set another one
+# optimized for eltex tc-50 thin client, you can set another one
 # To build everything, type `make` or `make debug`, which are equal, or `make release`, or `make wild`
 # To build one project, for ex. `cs` in wild configuration, type `CONFIG=wild make cs`
 config:

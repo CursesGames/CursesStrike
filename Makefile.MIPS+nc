@@ -11,7 +11,6 @@ CROSS_COMPILE := /home/striker/bin/cross-compile/openwrt-sdk-18.06.1-ar71xx-gene
 endif
 
 override CC := $(CROSS_COMPILE)gcc
-override DEPDIR := $(ROOTDIR)/src-build/arch/mips
 
 # whole solution flags
 CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter

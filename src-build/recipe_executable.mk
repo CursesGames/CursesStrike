@@ -1,4 +1,8 @@
+# allowing to override this var from target Makefile
+ifeq ($(LOCAL_OBJECTS),)
 LOCAL_OBJECTS := $(LOCAL_SOURCES:.c=.o)
+endif
+
 LOCAL_OBJECTS := $(addprefix $(OBJDIR)/,$(LOCAL_OBJECTS))
 
 LOCAL_STATIC_DEPENDENT_FILES := $(addprefix $(LIBDIR)/,$(LOCAL_STATIC_DEPENDENCIES))

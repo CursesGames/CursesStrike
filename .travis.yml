@@ -2,56 +2,100 @@ git:
   depth: 3
   quiet: true
 sudo: false
+before_install: 
+- export NCURSES_VERSION=6.1
+- wget -nv https://ftp.gnu.org/gnu/ncurses/ncurses-$NCURSES_VERSION.tar.gz
+install: 
+- mkdir src-deps
+- pushd src-deps
+- tar -xf ../ncurses-$NCURSES_VERSION.tar.gz
+- ln -sr ncurses-$NCURSES_VERSION ncurses
+- pushd ncurses
+- rm -rf form menu panel
+- popd
+- popd
+- export NCURSES_COMMON_OPTIONS="--without-ada --without-cxx --without-cxx-binding --without-progs --without-tack --without-tests --without-manpages --without-debug --without-profile --with-shared --with-normal --without-dlsym --disable-big-core --disable-big-strings --enable-getcap --enable-widec --disable-largefile --disable-tparm-varargs --without-develop --disable-overwrite --disable-wattr-macros --enable-ext-putwin --disable-echo"
 matrix:
   include:
   - name: GCC
-    env: CC=gcc CC_ARCH=x64_gcc
+    env:
+    - CC=gcc
+    - CC_ARCH=x64_gcc
     before_script: 
+    - pushd src-deps/ncurses
+    - ./configure $NCURSES_COMMON_OPTIONS
+    - make -j4
+    - popd
     script: 
     - CONFIG=debug make projects tests
-    - CONFIG=wild make
     - CONFIG=prerelease make
     - CONFIG=release make
+    - NCURSES_FROM_SOURCE=1 CONFIG=wild make
   - name: Clang
-    env: CC=clang CC_ARCH=x64_clang
+    env:
+    - CC=clang
+    - CC_ARCH=x64_clang
     before_script: 
+    - pushd src-deps/ncurses
+    - ./configure $NCURSES_COMMON_OPTIONS
+    - make -j4
+    - popd
     script: 
     - CONFIG=debug make projects tests
-    - CONFIG=wild make
     - CONFIG=prerelease make
     - CONFIG=release make
+    - NCURSES_FROM_SOURCE=1 CONFIG=wild make
   - name: Linaro ARM
     env:
-    - CROSS_COMPILE="$(pwd)/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-"
+    - CROSS_COMPILE="$(pwd)/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-"
     - CC_ARCH=armv7l
     before_script:
-    - wget -nv http://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/arm-linux-gnueabihf/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz
-    - tar -xf gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz --checkpoint=.100
+    - wget -nv http://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/arm-linux-gnueabihf/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz
+    - tar -xf gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz --checkpoint=.100
+    - pushd src-deps/ncurses
+    - CC=$CROSS_COMPILE"gcc" ./configure --target=arm-linux-gnueabihf --host=$(./config.guess) $NCURSES_COMMON_OPTIONS
+    - make -j4
+    - popd
     script:
     - CONFIG=debug make -f Makefile.ARM projects tests
-    - CONFIG=wild make -f Makefile.ARM
     - CONFIG=prerelease make -f Makefile.ARM
     - CONFIG=release make -f Makefile.ARM
+    - CONFIG=wild make -f Makefile.ARM+nc
   - name: OpenWRT MIPS
     env:
-    - CROSS_COMPILE="$(pwd)/lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64/staging_dir/toolchain-mips_24kc_gcc-5.4.0_musl-1.1.16/bin/mips-openwrt-linux-musl-"
-    - STAGING_DIR=/tmp
+    - CROSS_COMPILE="$(pwd)/openwrt-sdk-18.06.1-ar71xx-generic_gcc-7.3.0_musl.Linux-x86_64/staging_dir/toolchain-mips_24kc_gcc-7.3.0_musl/bin/mips-openwrt-linux-musl-"
     - CC_ARCH=mips-24kc
+    - STAGING_DIR=/tmp
     before_script:
-    - wget -nv https://downloads.openwrt.org/releases/17.01.4/targets/ar71xx/generic/lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64.tar.xz
-    - tar -xf lede-sdk-17.01.4-ar71xx-generic_gcc-5.4.0_musl-1.1.16.Linux-x86_64.tar.xz --checkpoint=.100
+    - wget -nv https://downloads.openwrt.org/releases/18.06.1/targets/ar71xx/generic/openwrt-sdk-18.06.1-ar71xx-generic_gcc-7.3.0_musl.Linux-x86_64.tar.xz
+    - tar -xf openwrt-sdk-18.06.1-ar71xx-generic_gcc-7.3.0_musl.Linux-x86_64.tar.xz --checkpoint=.100
+    - pushd src-deps/ncurses
+    - CC=$CROSS_COMPILE"gcc" ./configure --target=mips-openwrt-linux-musl --host=$(./config.guess) $NCURSES_COMMON_OPTIONS
+    - make -j4
+    - popd
     script:
     - CONFIG=debug make -f Makefile.MIPS projects tests
-    - CONFIG=wild make -f Makefile.MIPS
     - CONFIG=prerelease make -f Makefile.MIPS
     - CONFIG=release make -f Makefile.MIPS
-before_deploy: mkdir release && cp res/propeller.bcsmap bin && cd bin && ls -1 . | zip -9o@ ../release/bcs-$CC_ARCH.zip && cd .. && ls -1 release/*
+    - CONFIG=wild make -f Makefile.MIPS+nc
+before_deploy:
+- mkdir release 
+- cp res/propeller.bcsmap bin
+- pushd bin 
+- echo cs_standalone.exe | zip -9o@ ../release/bcs-$CC_ARCH-client-standalone.zip
+- echo cs.exe | zip -9o@ ../release/bcs-$CC_ARCH-client-tiny.zip
+- (echo "csds.exe" ; echo "bcsmapconverter.exe" ; echo "propeller.bcsmap") | zip -9o@ ../release/bcs-$CC_ARCH-server.zip
+- popd
+- ls -1 release/*
 deploy:
   provider: releases
   user: Str1ker17
   api_key: '$GITHUB_API_KEY'
   skip_cleanup: true
-  file: release/bcs-$CC_ARCH.zip
+  file:
+  - release/bcs-$CC_ARCH-client-standalone.zip
+  - release/bcs-$CC_ARCH-client-tiny.zip
+  - release/bcs-$CC_ARCH-server.zip
   on:
     repo: CursesGames/CursesStrike
     tags: true
@@ -59,8 +103,8 @@ deploy:
 notifications:
   webhooks:
     urls:
-      - https://ultibot.ru/services/traviswh/
-      - http://ec2-18-184-120-18.eu-central-1.compute.amazonaws.com/services/traviswh/
+    - https://ultibot.ru/services/traviswh/
+    - http://ec2-18-184-120-18.eu-central-1.compute.amazonaws.com/services/traviswh/
     on_success: always
     on_failure: always
     on_start: always

@@ -1,6 +1,7 @@
 # DEPENDENCIES
 cs: libncurses_util liblinux_util libbcsmap libbcsproto libvector libbcsstatemachine libbcsgameplay
 csds: liblinux_util libbcsmap libbcsproto libbcsstatemachine libvector liblinkedlist libbcsgameplay
+cs_standalone: cs
 bcsmapconverter: libbcsmap liblinux_util
 libncurses_util: liblinux_util
 liblinux_util: 
