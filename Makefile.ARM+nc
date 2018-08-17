@@ -11,6 +11,7 @@ CROSS_COMPILE := /home/striker/bin/cross-compile/gcc-linaro-4.9.4-2017.01-x86_64
 endif
 
 override CC := $(CROSS_COMPILE)gcc
+override DEPDIR := $(ROOTDIR)/src-deps
 
 # whole solution flags
 CFLAGS := -ansi -Wextra -pedantic -Wno-unused-parameter

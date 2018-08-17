@@ -9,6 +9,7 @@ LDFLAGS :=
 
 # native compilation
 CFLAGS += -march=native -mtune=native
+CROSS_COMPILE :=
 
 # export ALL variables
 export

@@ -12,6 +12,8 @@ install:
 - ln -sr ncurses-$NCURSES_VERSION ncurses
 - pushd ncurses
 - rm -rf form menu panel
+- mkdir include/ncursesw
+- ln -sr include/curses.h include/ncursesw/ncurses.h
 - popd
 - popd
 - export NCURSES_COMMON_OPTIONS="--without-ada --without-cxx --without-cxx-binding --without-progs --without-tack --without-tests --without-manpages --without-debug --without-profile --with-shared --with-normal --without-dlsym --disable-big-core --disable-big-strings --enable-getcap --enable-widec --disable-largefile --disable-tparm-varargs --without-develop --disable-overwrite --disable-wattr-macros --enable-ext-putwin --disable-echo"
